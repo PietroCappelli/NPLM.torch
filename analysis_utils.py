@@ -13,9 +13,9 @@ from hepstats.modeling import bayesian_blocks
 
 
 
-def compute_seed() -> int:
+def compute_date() -> str:
     """Computes a seed for the random number generator."""
-    return int(str(datetime.datetime.now().year)+str(datetime.datetime.now().month)+str(datetime.datetime.now().day)+str(datetime.datetime.now().hour)+str(datetime.datetime.now().minute)+str(datetime.datetime.now().second))
+    return str(datetime.datetime.now().year)+str(datetime.datetime.now().month)+str(datetime.datetime.now().day)+str(datetime.datetime.now().hour)+str(datetime.datetime.now().minute)+str(datetime.datetime.now().second)+str(datetime.datetime.now().microsecond)
 
 
 def compute_df(architecture: list) -> int:
