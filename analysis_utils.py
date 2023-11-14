@@ -12,6 +12,36 @@ import mplhep as hep
 from hepstats.modeling import bayesian_blocks
 
 
+def find_results(directory, name):
+    """
+    Find files in the given directory that end with the given name.
+    """
+    results = []
+    for file in os.listdir(directory):
+        if file.endswith(name):
+            results.append(file)
+    results.sort(key=lambda x: int(x.split("_")[0]))
+    return results
+
+
+def load_results(directory, losses, weights):
+    """
+    Load the losses and weights from the given directory.
+    """
+    losses_data  = []
+    weights_data = []
+    for i in range(len(losses)):
+        losses_data.append(torch.load(directory + losses[i]))
+        weights_data.append(torch.load(directory + weights[i]))
+    return np.array(losses_data), np.array(weights_data)
+
+
+def compute_t_from_loss(loss: np.array) -> np.array:
+    """
+    Compute the test statistic t from the given loss history.
+    """
+    return -2*loss
+
 
 def compute_date() -> str:
     """Computes a seed for the random number generator."""

@@ -2,6 +2,7 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 import mplhep as hep
+import scipy.stats as stats
 
 
 def draw_cms_label(ax: plt.Axes, label: str = "Preliminary", rlabel: str = "NPLM", fontsize: int = 28):
@@ -560,3 +561,375 @@ def plot_loss_history(
     if return_fig:
         return fig, ax
     
+    
+from plot_utils import draw_cms_label, set_label_font, set_tick_font
+
+def plot_one_t(
+    t_distribution : np.ndarray,
+    t_bins         : np.ndarray,
+    chi2           : stats._distn_infrastructure.rv_continuous_frozen,
+    chi2_grid      : np.ndarray,
+    show_hist      : bool = True,
+    show_error     : bool = False,
+    compute_rate   : bool = False,
+    err_marker     : str  = "o",
+    err_markersize : float = 10,
+    err_capsize    : float = 5,
+    err_elinewidth : float = 2,
+    err_capthick   : float = 2,
+    err_color      : str   = "black",
+    figsize        : tuple = (14, 10),
+    fontsize       : int   = 36,
+    cms            : bool  = False,
+    cms_label      : str   = "",
+    cms_rlabel     : str   = "",
+    hist_ecolor    : str   = "black",
+    hist_fcolor    : str   = "black",
+    chi2_color     : str   = "red",
+    hist_lw        : float = 4,
+    chi2_lw        : float = 4,
+    hist_type      : str   = "step",
+    hist_label     : str   = "Data",
+    chi2_label     : str   = r"$\chi^2$",
+    xlabel         : str   = r"$t$",
+    ylabel         : str   = "Density",
+    show_plot      : bool  = True,
+    save_plot      : bool  = False,
+    plot_name      : str   = "t_distribution",
+    plot_path      : str   = "./",
+    plot_format    : str   = "pdf",
+    return_fig     : bool  = False
+    ):  
+
+    fig, ax = plt.subplots(figsize=figsize, constrained_layout=True)
+    
+    if cms:
+        draw_cms_label(ax=ax, label=cms_label, rlabel=cms_rlabel, fontsize=fontsize)
+    set_label_font(ax=ax, fontsize=fontsize)
+    set_tick_font(ax=ax, fontsize=fontsize-4)
+
+    
+    t_bincenters = (t_bins[1:] + t_bins[:-1]) / 2
+    t_binwidths   = (t_bins[1:] - t_bins[:-1])
+    
+    hist_, _  = np.histogram(t_distribution, bins=t_bins, density=False)
+    hist_norm = np.sum([hist_[i] * t_binwidths[i] for i in range(t_bincenters.size)]) 
+    hist      = hist_ / hist_norm   
+    hist_err  = np.sqrt(hist / hist_norm)
+    
+    if compute_rate:
+        n_bins    = t_bincenters.size
+        n_obs     = t_distribution.size
+        exp_rate  = (n_obs / n_bins) / hist_norm
+        exp_err   = np.sqrt(exp_rate / hist_norm)
+
+        hist_err  = [hist_err[i] if hist_err[i] > 0 else exp_err for i in range(n_bins)]
+    else:
+        mask_hist_not_zero = (hist != 0)
+        t_bincenters       = t_bincenters[mask_hist_not_zero]
+        hist               = hist[mask_hist_not_zero]
+        hist_err           = hist_err[mask_hist_not_zero]
+        
+    if show_hist:
+        if hist_type == "step":
+            h = ax.hist(
+                t_bincenters,
+                bins     = t_bins,
+                weights  = hist,
+                histtype = hist_type,
+                label    = hist_label,
+                color    = hist_ecolor,
+                lw       = hist_lw,
+            )[-1][0]
+        
+        if hist_type == "stepfilled":
+            h = ax.hist(
+                t_bincenters,
+                bins      = t_bins,
+                weights   = hist,
+                histtype  = hist_type,
+                label     = hist_label,
+                edgecolor = hist_ecolor,
+                facecolor = hist_fcolor,
+                lw        = hist_lw,
+            )[-1][0]
+    
+    if show_error:
+        err = ax.errorbar(
+            x          = t_bincenters,
+            y          = hist,
+            yerr       = hist_err,
+            marker     = err_marker,
+            markersize = err_markersize,
+            capsize    = err_capsize,
+            elinewidth = err_elinewidth,
+            capthick   = err_capthick,
+            color      = err_color,
+            ls         = "",
+        )
+        
+    chisq = ax.plot(
+        chi2_grid,
+        chi2.pdf(chi2_grid),
+        label = chi2_label,
+        color = chi2_color,
+        lw    = chi2_lw,
+    )[0]
+    
+    ax.set_ylim(bottom=0)
+    ax.set_xlim(t_bins[0], t_bins[-1])
+    
+    if show_hist:
+        ax.legend([chisq, h], [chi2_label, hist_label], fontsize=fontsize-6)
+    elif not show_hist and show_error:
+        ax.legend([chisq, err], [chi2_label, hist_label], fontsize=fontsize-6)
+    else:
+        ax.legend([chisq], [chi2_label], fontsize=fontsize-6)
+        
+    ax.set_xlabel(xlabel, fontsize=fontsize)
+    ax.set_ylabel(ylabel, fontsize=fontsize)
+    
+    if save_plot:
+        fig.savefig(plot_path + plot_name + "." + plot_format, format=plot_format, bbox_inches="tight", dpi=300, facecolor="white")
+        
+    if show_plot:
+        plt.show()
+        
+    if return_fig:
+        return fig, ax
+    
+    return
+
+
+
+def plot_two_t(
+    t_distribution_1   : np.ndarray,
+    t_bins_1           : np.ndarray,
+    t_distribution_2   : np.ndarray,
+    t_bins_2           : np.ndarray,
+    chi2               : stats._distn_infrastructure.rv_continuous_frozen,
+    chi2_grid          : np.ndarray,
+    show_error_1       : bool = False,
+    show_error_2       : bool = False,
+    show_hist_1        : bool = True,
+    show_hist_2        : bool = True,
+    compute_rate_1     : bool = False,
+    compute_rate_2     : bool = False,
+    err_marker_1       : str  = "o",
+    err_marker_2       : str  = "o",
+    err_markersize_1   : float = 10,
+    err_markersize_2   : float = 10,
+    err_capsize_1      : float = 5,
+    err_capsize_2      : float = 5,
+    err_elinewidth_1   : float = 2,
+    err_elinewidth_2   : float = 2,
+    err_capthick_1     : float = 2,
+    err_capthick_2     : float = 2,
+    err_ecolor_1       : str   = "black",
+    err_ecolor_2       : str   = "black",
+    figsize            : tuple = (14, 10),
+    fontsize           : int   = 36,
+    cms                : bool  = False,
+    cms_label          : str   = "",
+    cms_rlabel         : str   = "",
+    hist_ecolor_1      : str   = "black",
+    hist_ecolor_2      : str   = "black",
+    hist_fcolor_1      : str   = "black",
+    hist_fcolor_2      : str   = "black",
+    chi2_color         : str   = "red",
+    hist_lw_1          : float = 4,
+    hist_lw_2          : float = 4,
+    chi2_lw            : float = 4,
+    hist_type_1        : str   = "step",
+    hist_type_2        : str   = "step",
+    hist_label_1       : str   = "Data",
+    hist_label_2       : str   = "Data",
+    chi2_label         : str   = r"$\chi^2$",
+    xlabel             : str   = r"$t$",
+    ylabel             : str   = "Density",
+    show_plot          : bool  = True,
+    save_plot          : bool  = False,
+    plot_name          : str   = "t_distribution",
+    plot_path          : str   = "./",
+    plot_format        : str   = "pdf",
+    return_fig         : bool  = False
+    ):  
+
+    fig, ax = plt.subplots(figsize=figsize, constrained_layout=True)
+    
+    if cms:
+        draw_cms_label(ax=ax, label=cms_label, rlabel=cms_rlabel, fontsize=fontsize)
+    set_label_font(ax=ax, fontsize=fontsize)
+    set_tick_font(ax=ax, fontsize=fontsize-4)
+
+    
+    t_bincenters_1  = (t_bins_1[1:] + t_bins_1[:-1]) / 2
+    t_binwidths_1   = (t_bins_1[1:] - t_bins_1[:-1])
+    
+    t_bincenters_2  = (t_bins_2[1:] + t_bins_2[:-1]) / 2
+    t_binwidths_2   = (t_bins_2[1:] - t_bins_2[:-1])
+    
+    hist_1_, _  = np.histogram(t_distribution_1, bins=t_bins_1, density=False)
+    hist_norm_1 = np.sum([hist_1_[i] * t_binwidths_1[i] for i in range(t_bincenters_1.size)]) 
+    hist_1      = hist_1_ / hist_norm_1   
+    hist_err_1  = np.sqrt(hist_1 / hist_norm_1)
+    
+    hist_2_, _  = np.histogram(t_distribution_2, bins=t_bins_2, density=False)
+    hist_norm_2 = np.sum([hist_2_[i] * t_binwidths_2[i] for i in range(t_bincenters_2.size)]) 
+    hist_2      = hist_2_ / hist_norm_2   
+    hist_err_2  = np.sqrt(hist_2 / hist_norm_2)
+    
+    if compute_rate_1:
+        n_bins_1    = t_bincenters_1.size
+        n_obs_1     = t_distribution_1.size
+        exp_rate_1  = (n_obs_1 / n_bins_1) / hist_norm_1
+        exp_err_1   = np.sqrt(exp_rate_1 / hist_norm_1)
+        
+        hist_err_1  = [hist_err_1[i] if hist_err_1[i] > 0 else exp_err_1 for i in range(n_bins_1)]
+        
+    elif not compute_rate_1:
+        mask_hist_not_zero_1 = (hist_1 != 0)
+        t_bincenters_1       = t_bincenters_1[mask_hist_not_zero_1]
+        hist_1               = hist_1[mask_hist_not_zero_1]
+        hist_err_1           = hist_err_1[mask_hist_not_zero_1]
+        
+    if compute_rate_2:
+        n_bins_2    = t_bincenters_2.size
+        n_obs_2     = t_distribution_2.size
+        exp_rate_2  = (n_obs_2 / n_bins_2) / hist_norm_2
+        exp_err_2   = np.sqrt(exp_rate_2 / hist_norm_2)
+
+        hist_err_2  = [hist_err_2[i] if hist_err_2[i] > 0 else exp_err_2 for i in range(n_bins_2)]
+        
+    elif not compute_rate_2:
+        mask_hist_not_zero_2 = (hist_2 != 0)
+        t_bincenters_2       = t_bincenters_2[mask_hist_not_zero_2]
+        hist_2               = hist_2[mask_hist_not_zero_2]
+        hist_err_2           = hist_err_2[mask_hist_not_zero_2]
+        
+    
+    if show_hist_1:
+        if hist_type_1 == "step":
+            h_1 = ax.hist(
+                t_bincenters_1,
+                bins     = t_bins_1,
+                weights  = hist_1,
+                histtype = hist_type_1,
+                label    = hist_label_1,
+                color    = hist_ecolor_1,
+                lw       = hist_lw_1,
+            )[-1][0]
+        
+        if hist_type_1 == "stepfilled":
+            h_1 = ax.hist(
+                t_bincenters_1,
+                bins      = t_bins_1,
+                weights   = hist_1,
+                histtype  = hist_type_1,
+                label     = hist_label_1,
+                edgecolor = hist_ecolor_1,
+                facecolor = hist_fcolor_1,
+                lw        = hist_lw_1,
+            )[-1][0]
+    
+    if show_hist_2:   
+        if hist_type_2 == "step":
+            h_2 = ax.hist(
+                t_bincenters_2,
+                bins     = t_bins_2,
+                weights  = hist_2,
+                histtype = hist_type_2,
+                label    = hist_label_2,
+                color    = hist_ecolor_2,
+                lw       = hist_lw_2,
+            )[-1][0]
+        
+        if hist_type_2 == "stepfilled":
+            h_2 = ax.hist(
+                t_bincenters_2,
+                bins      = t_bins_2,
+                weights   = hist_2,
+                histtype  = hist_type_2,
+                label     = hist_label_2,
+                edgecolor = hist_ecolor_2,
+                facecolor = hist_fcolor_2,
+                lw        = hist_lw_2,
+            )[-1][0]
+    
+    if show_error_1:
+        err_1 = ax.errorbar(
+            x          = t_bincenters_1,
+            y          = hist_1,
+            yerr       = hist_err_1,
+            marker     = err_marker_1,
+            markersize = err_markersize_1,
+            capsize    = err_capsize_1,
+            elinewidth = err_elinewidth_1,
+            capthick   = err_capthick_1,
+            color      = err_ecolor_1,
+            ls         = "",
+            label      = hist_label_1,
+        )
+    
+    if show_error_2:
+        err_2 = ax.errorbar(
+        x          = t_bincenters_2,
+        y          = hist_2,
+        yerr       = hist_err_2,
+        marker     = err_marker_2,
+        markersize = err_markersize_2,
+        capsize    = err_capsize_2,
+        elinewidth = err_elinewidth_2,
+        capthick   = err_capthick_2,
+        color      = err_ecolor_2,
+        ls         = "",
+        label      = hist_label_2,
+    )
+        
+    chisq = ax.plot(
+        chi2_grid,
+        chi2.pdf(chi2_grid),
+        label = chi2_label,
+        color = chi2_color,
+        lw    = chi2_lw,
+        zorder=10
+    )[0]
+    
+    if show_hist_1 and show_hist_2:
+        ax.legend([chisq, h_1, h_2], [chi2_label, hist_label_1, hist_label_2], fontsize=fontsize-6)
+    if show_hist_1 and not show_hist_2 and show_error_2:
+        ax.legend([chisq, h_1, err_2], [chi2_label, hist_label_1, hist_label_2], fontsize=fontsize-6)
+    if not show_hist_1 and show_hist_2 and show_error_1:
+        ax.legend([chisq, err_1, h_2], [chi2_label, hist_label_1, hist_label_2], fontsize=fontsize-6)
+    if not show_hist_1 and show_hist_2 and not show_error_1:
+        ax.legend([chisq, h_2], [hist_label_2], fontsize=fontsize-6)
+    if show_hist_1 and not show_hist_2 and not show_error_2:
+        ax.legend([chisq, h_1], [chi2_label, hist_label_1], fontsize=fontsize-6)
+    if not show_hist_1 and not show_hist_2 and show_error_1 and show_error_2:
+        ax.legend([chisq, err_1, err_2], [chi2_label, hist_label_1, hist_label_2], fontsize=fontsize-6)
+    if not show_hist_1 and not show_hist_2 and show_error_1 and not show_error_2:
+        ax.legend([chisq, err_1], [chi2_label, hist_label_1], fontsize=fontsize-6)
+    if not show_hist_1 and not show_hist_2 and not show_error_1 and show_error_2:
+        ax.legend([chisq, err_2], [chi2_label, hist_label_2], fontsize=fontsize-6)
+    
+    
+    ax.set_ylim(bottom=0)
+    
+    xmin = min(t_bins_1[0],  t_bins_2[0])
+    xmax = max(t_bins_1[-1], t_bins_2[-1])
+
+    ax.set_xlim(xmin, xmax)
+        
+    ax.set_xlabel(xlabel, fontsize=fontsize)
+    ax.set_ylabel(ylabel, fontsize=fontsize)
+    
+    if save_plot:
+        fig.savefig(plot_path + plot_name + "." + plot_format, format=plot_format, bbox_inches="tight", dpi=300, facecolor="white")
+        
+    if show_plot:
+        plt.show()
+        
+    if return_fig:
+        return fig, ax
+    
+    return
