@@ -1,5 +1,5 @@
 from plot_utils import plot_ref_data, plot_ref_data_reco, plot_loss_history
-from analysis_utils import compute_df, produce_bins, save_binning, load_binning, compute_seed
+from analysis_utils import compute_df, produce_bins, save_binning, load_binning
 from nn_utils import NPLMnetwork, loss_function
 
 from argparse import ArgumentParser
@@ -120,7 +120,7 @@ def log_results(obj, path, name):
     
 
 
-def main(args, seed, device):
+def main(args, device):
     """
     Main function for running the NPLM network.
 
@@ -136,9 +136,14 @@ def main(args, seed, device):
     # Load the configuration file
     config_json = load_config(args.jsonfile)
     
+    # datetime of launch
+    date = config_json["date"]
+    date = date.replace("_", "")
+    
     # Set seed
-    torch.manual_seed(seed)
-    np.random.seed(seed)
+    random_seed = int(date[-6:]) + args.index
+    torch.manual_seed(random_seed)
+    np.random.seed(random_seed)
     
     # Statistics                                                                                                                                                   
     # N_REF      = config_json["N_Ref"]
@@ -173,7 +178,6 @@ def main(args, seed, device):
         architecture      = ARCHITECTURE,
         activation_func   = ACTIVATION,
         weight_clip_value = WCLIP,
-        device            = device,
         trainable         = True,
         learning_rate     = 0.001
     )
@@ -220,8 +224,8 @@ def main(args, seed, device):
     ##############
 
     # After training, save the final model and the loss history
-    log_results(nplm_model.state_dict(), OUTPUT_PATH, str(seed)+"_nplm_weights")
-    log_results(losses, OUTPUT_PATH, str(seed)+"_losses")
+    log_results(nplm_model.state_dict(), OUTPUT_PATH, str(args.index)+"_nplm_weights")
+    log_results(losses, OUTPUT_PATH, str(args.index)+"_losses")
     
     
 
@@ -230,10 +234,9 @@ if __name__ == "__main__":
     
     parser = ArgumentParser()
     parser.add_argument("-j", "--jsonfile", type=str, help="json file", required=True)
+    parser.add_argument("-i", "--index",    type=int, help="index",     required=True)
     args = parser.parse_args()
-    
-    seed = compute_seed()
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    main(args, seed, device)
+    main(args, device)

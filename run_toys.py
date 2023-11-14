@@ -2,7 +2,7 @@ import os
 import json
 import argparse
 
-from analysis_utils import compute_date
+from datetime import datetime
 
 INPUT_DIRECTORY  = "./"
 OUTPUT_DIRECTORY = "./output/"
@@ -11,7 +11,7 @@ OUTPUT_DIRECTORY = "./output/"
 config_json = {
     "N_Ref"             : 200_000,
     "N_Bkg"             : 2_000,
-    "N_Sig"             : 10,
+    "N_Sig"             : 0,
     "SIG_LOC"           : 6.40,
     "SIG_STD"           : 0.16,
     "output_directory"  : OUTPUT_DIRECTORY,
@@ -30,7 +30,13 @@ def create_config_file(config_table, path, name="config"):
 
 def main(args):
     
-    current_date = compute_date()
+    current_date  = str(datetime.now().year)        + "_"
+    current_date += str(datetime.now().month)       + "_"
+    current_date += str(datetime.now().day)         + "_"
+    current_date += str(datetime.now().hour)        + "_"
+    current_date += str(datetime.now().minute)      + "_"
+    current_date += str(datetime.now().second)      + "_"
+    current_date += str(datetime.now().microsecond)
     config_json["date"] = current_date
     
     # build the storage directory name from the configuration dictionary
@@ -58,7 +64,7 @@ def main(args):
         os.makedirs(config_json["output_directory"])
     
     # create the config file
-    config_name = f"config_{current_date}.json"
+    config_name = f"config_{current_date}"
     config_json["jsonfile"] = create_config_file(config_json, config_json["output_directory"], name=config_name)
     
     if args.local:
