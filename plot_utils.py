@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import mplhep as hep
 import scipy.stats as stats
+import matplotlib as mpl
 
 
 def draw_cms_label(ax: plt.Axes, label: str = "Preliminary", rlabel: str = "NPLM", fontsize: int = 28):
@@ -562,7 +563,6 @@ def plot_loss_history(
         return fig, ax
     
     
-from plot_utils import draw_cms_label, set_label_font, set_tick_font
 
 def plot_one_t(
     t_distribution : np.ndarray,
@@ -933,3 +933,123 @@ def plot_two_t(
         return fig, ax
     
     return
+
+
+def plot_quantiles_evolution(
+    t_history,
+    quantile_list,
+    quantile_labels,
+    chi2,
+    obs_alpha    : float = 1.0,
+    th_alpha     : float = 1.0,
+    epochs_init  : int = 1000,
+    epochs_norm  : int = 1,
+    figsize      : tuple = (14, 10),
+    fontsize     : int = 36,
+    palette      : list = ["#1f77b4", "#8f6fc6", "#e657a3", "#ff5d58", "#ff7f0e"],
+    lw           : int = 4,
+    cms          : bool = False,
+    cms_label    : str = "",
+    cms_rlabel   : str = "",
+    grid         : bool = True,
+    xlabel       : str = "Epoch",
+    ylabel       : str = "Loss",
+    show_plot    : bool = True,
+    save_plot    : bool = False,
+    plot_name    : str = "loss_history",
+    plot_path    : str = "./",
+    plot_format  : str = "pdf",
+    return_fig   : bool = False
+):
+    fig, ax = plt.subplots(figsize=figsize, constrained_layout=True)
+    
+    if cms:
+        draw_cms_label(ax=ax, label=cms_label, rlabel=cms_rlabel, fontsize=fontsize)
+    if grid:
+        draw_grid(ax=ax)
+    set_label_font(ax=ax, fontsize=fontsize)
+    set_tick_font(ax=ax, fontsize=fontsize-4)
+
+    
+    theoretical_quantiles = chi2.ppf(quantile_list)
+    observed_quantiles    = np.quantile(t_history, quantile_list, axis=0)
+    
+    
+    xmin = epochs_init        / epochs_norm
+    xmax = t_history.shape[1] / epochs_norm
+    
+    ymin = 0
+    
+    obs_max = np.max(observed_quantiles)
+    th_max  = np.max(theoretical_quantiles)
+    
+    if obs_max > th_max:
+        ymax = obs_max + (obs_max - ymin) * 0.2
+    else:
+        ymax = th_max + (th_max - ymin) * 0.2
+    
+    
+    for i in range(len(quantile_list)):
+    
+        # Plot the theoretical quantiles
+        ax.hlines(
+            y         = theoretical_quantiles[i],
+            xmin      = xmin,
+            xmax      = xmax,
+            color     = palette[i],
+            linestyle = "--",
+            linewidth = lw,
+            alpha     = th_alpha,
+            zorder    = 0
+        )
+        
+        # Plot the observed quantiles history
+        ax.plot(
+            np.arange(epochs_init, observed_quantiles.shape[1]) / epochs_norm,
+            observed_quantiles[i][epochs_init:],
+            color     = palette[i],
+            linestyle = "-",
+            linewidth = lw,
+            alpha     = obs_alpha,
+            zorder    = 1
+        )
+        
+        ax.text(
+            x                   = xmax + 0.005 * (xmax - xmin), 
+            y                   = theoretical_quantiles[i],
+            s                   = quantile_labels[i], 
+            horizontalalignment = "left", 
+            verticalalignment   = "center", 
+            fontsize            = fontsize-4,
+            color               = palette[i],
+            transform           = ax.transData
+        )
+    
+    
+    ax.set_ylim(ymin, ymax)
+    ax.set_xlim(xmin, xmax)
+
+    # add fake legend with dashed line labeled "Expected" and solid line labeled "Observed"
+    dashed_line = mpl.lines.Line2D([], [], color=palette[0], linestyle="--", linewidth=4)
+    solid_line  = mpl.lines.Line2D([], [], color=palette[0], linestyle="-",  linewidth=4)
+
+    ax.legend(
+        [dashed_line, solid_line],
+        ["Expected quantiles", "Observed quantiles"],
+        fontsize = fontsize-6,
+        ncol     = 2,
+        loc      = "upper center"
+    )
+    
+    ax.set_xlabel(xlabel, fontsize=fontsize)
+    ax.set_ylabel(ylabel, fontsize=fontsize)
+
+    if save_plot:
+        fig.savefig(plot_path + plot_name + "." + plot_format, format=plot_format, bbox_inches="tight", dpi=300, facecolor="white") 
+
+    if show_plot:
+        plt.show()
+        
+    if return_fig:
+        return fig, ax
+    
