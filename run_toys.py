@@ -1,8 +1,11 @@
 import os
 import json
 import argparse
+import h5py
+import numpy as np
 
 from datetime import datetime
+from time import time
 
 INPUT_DIRECTORY  = "./"
 OUTPUT_DIRECTORY = "./output/"
@@ -11,7 +14,7 @@ OUTPUT_DIRECTORY = "./output/"
 config_json = {
     "N_Ref"             : 200_000,
     "N_Bkg"             : 2_000,
-    "N_Sig"             : 0,
+    "N_Sig"             : 10,
     "SIG_LOC"           : 6.40,
     "SIG_STD"           : 0.16,
     "output_directory"  : OUTPUT_DIRECTORY,
@@ -28,7 +31,44 @@ def create_config_file(config_table, path, name="config"):
     return "%s/%s.json"%(path, name)
 
 
+def create_debug_files(path: str, name: str):
+    """
+    Create the debug files for the toy example.
+
+    Args:
+        path (str): The path to the output directory.
+        name (str): The name of the output file.
+
+    Returns:
+        None
+    """
+    # Create the output directory
+    os.makedirs(path, exist_ok=True)
+
+    # Create the debug files
+    with h5py.File(path + name + ".h5", "w") as h5file:
+        h5file.create_dataset("epoch",     dtype=np.float64, shape=(1,), maxshape=(None,))
+        h5file.create_dataset("zero_grad", dtype=np.float64, shape=(1,), maxshape=(None,))
+        h5file.create_dataset("forward",   dtype=np.float64, shape=(1,), maxshape=(None,))
+        h5file.create_dataset("loss",      dtype=np.float64, shape=(1,), maxshape=(None,))
+        h5file.create_dataset("backward",  dtype=np.float64, shape=(1,), maxshape=(None,))
+        h5file.create_dataset("step",      dtype=np.float64, shape=(1,), maxshape=(None,))
+        h5file.create_dataset("clip",      dtype=np.float64, shape=(1,), maxshape=(None,))
+        h5file.create_dataset("toy",       dtype=np.float64, shape=(1,), maxshape=(None,))
+        h5file.create_dataset("training",  dtype=np.float64, shape=(1,), maxshape=(None,))
+        h5file.create_dataset("data_gen",  dtype=np.float64, shape=(1,), maxshape=(None,))
+        h5file.create_dataset("nplm_init", dtype=np.float64, shape=(1,), maxshape=(None,))
+        h5file.create_dataset("push",      dtype=np.float64, shape=(1,), maxshape=(None,))
+        h5file.create_dataset("global",    dtype=np.float64, shape=(1,), maxshape=(None,))
+
+
+
+
 def main(args):
+    
+    if args.debug:
+        # start the global timer
+        global_start = time()
     
     current_date  = str(datetime.now().year)        + "_"
     current_date += str(datetime.now().month)       + "_"
@@ -59,9 +99,16 @@ def main(args):
     # save the name of the python script to execute
     config_json["pyscript"] = args.pyscript
     
+    # save the number of toys to expect
+    config_json["toys"] = args.toys
+    
     # create the output directory if it does not exist
     if not os.path.exists(config_json["output_directory"]):
         os.makedirs(config_json["output_directory"])
+        
+    if args.debug:
+        # create the debug files
+        create_debug_files(config_json["output_directory"], "debug")
     
     # create the config file
     config_name = f"config_{current_date}"
@@ -71,7 +118,7 @@ def main(args):
         # launch toys
         for i in range(args.toys):
             print("Running toy %i / %i" %(i+1, args.toys))
-            os.system("python %s/%s -j %s -i %i" %(os.getcwd(), args.pyscript, config_json["jsonfile"], i))
+            os.system("python %s/%s -j %s -i %i -d %s" %(os.getcwd(), args.pyscript, config_json["jsonfile"], i, str(args.debug)))
     
     if not args.local:
         # launch toys
@@ -82,7 +129,7 @@ def main(args):
             script_src = open("%s/%i.src" %(label, i) , 'w')
             script_src.write("#!/bin/bash\n")
             script_src.write("source /cvmfs/sft.cern.ch/lcg/views/LCG_99/x86_64-centos7-gcc8-opt/setup.sh\n")
-            script_src.write("python %s/%s -j %s -i %i" %(os.getcwd(), args.pyscript, config_json["jsonfile"], i))
+            script_src.write("python %s/%s -j %s -i %i -d %s" %(os.getcwd(), args.pyscript, config_json["jsonfile"], i, str(args.debug)))
             script_src.close()
             os.system("chmod a+x %s/%i.src" %(label, i))
             # condor file
@@ -99,7 +146,14 @@ def main(args):
             # condor file submission
             os.system("condor_submit %s/%i.condor" %(label,i))
 
-    
+    if args.debug:
+        global_end = time()
+        global_time = global_end - global_start
+        print("Total time: %.2f s" %(global_time))
+
+        # write the total time to the debug file
+        with h5py.File(config_json["output_directory"] + "debug.h5", "a") as h5file:
+            h5file["global"][0] = global_time
 
 
 if __name__ == "__main__":
@@ -109,6 +163,7 @@ if __name__ == "__main__":
     parser.add_argument("-p", "--pyscript", type=str,  help="name of python script to execute", required=True)
     parser.add_argument("-t", "--toys",     type=int,  help="number of toys to run",            required=True)
     parser.add_argument("-l", "--local",    type=bool, help="run locally",                      default=False)
+    parser.add_argument("-d", "--debug",    type=bool, help="debug timing",                     default=False)
     
     args = parser.parse_args()
     
