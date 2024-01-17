@@ -1,3 +1,6 @@
+import sys
+sys.path.insert(0, "/home/lai/nplm/src")
+
 from plot_utils import plot_ref_data, plot_ref_data_reco, plot_loss_history
 from analysis_utils import compute_df, produce_bins, save_binning, load_binning
 from nn_utils import NPLMnetwork, loss_function
@@ -421,5 +424,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    # force cpu
+    device = torch.device("cpu")
     
     main(args, device)

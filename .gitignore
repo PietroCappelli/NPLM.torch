@@ -1,4 +1,6 @@
 __pycache__/
 data/
-# output/
+output/
 plots/
+NPLM_package/
+.vscode/
