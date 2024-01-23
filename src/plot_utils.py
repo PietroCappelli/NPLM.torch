@@ -1054,7 +1054,6 @@ def plot_quantiles_evolution(
         return fig, ax
     
     
-    
 def plot_nuisance_variations(
     feature, 
     targets, 
