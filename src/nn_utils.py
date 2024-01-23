@@ -202,6 +202,18 @@ class NPLMnetwork(torch.nn.Module):
         
 
 class ParametricNet(torch.nn.Module):
+    """
+    Parametric Neural Network.
+
+    Attributes:
+        device (str): The device on which the model operates (e.g., 'cpu', 'cuda').
+        architecture (list[int]): A list specifying the architecture of each NPLMnetwork.
+        poly_degree (int): The degree of the polynomial used in the parametric model.
+        training_history (dict): Stores the training history including loss values.
+        model_state (dict): Contains the state of the model.
+        train_coeffs (list[bool]): Indicates whether each polynomial term is trainable.
+        coeffs (torch.nn.ModuleList): A list of NPLMnetwork instances, each representing a term in the polynomial model.
+    """
     def __init__(
         self, 
         architecture  = [1, 10, 1], 
@@ -211,43 +223,74 @@ class ParametricNet(torch.nn.Module):
         train_coeffs  = True,
         device        = "cpu"
         ):
+        """
+        Initializes the ParametricNet with a specified architecture, activation function, polynomial degree, 
+        initial model state, training coefficients, and device.
+
+        Args:
+            architecture (list[int], optional): A list specifying the architecture of each NPLMnetwork. Defaults to [1, 10, 1].
+            activation (callable, optional): The activation function to be used in each NPLMnetwork. Defaults to torch.nn.Sigmoid().
+            poly_degree (int, optional): The degree of the polynomial model. Defaults to 1.
+            initial_model (str, optional): Path to a pre-trained model to initialize the ParametricNet. Defaults to None.
+            train_coeffs (bool or list[bool], optional): Indicates if the coefficients of the polynomial are trainable. Defaults to True.
+            device (str, optional): The device to use for computation. Defaults to "cpu".
+        """
         super(ParametricNet, self).__init__()
         
-        # Store the device on which the model is
         self.device = device
-        self.to(self.device)
+        # self.to(self.device)  # Move the model to the specified device
         
-        self.poly_degree = poly_degree
-        self.training_history = None
-        self.model_state = None
-            
+        self.architecture = architecture  # Architecture of each NPLMnetwork
+        
+        self.poly_degree = poly_degree  # Polynomial degree of the model
+        self.training_history = None  # Placeholder for training history
+        self.model_state = None  # Placeholder for model state
 
+        # Handling the train_coeffs argument to ensure it's a list
         if not isinstance(train_coeffs, list):
             self.train_coeffs = [train_coeffs for _ in range(self.poly_degree)]
         else:
             self.train_coeffs = train_coeffs
-        
+
+        # Creating the polynomial coefficients as instances of NPLMnetwork
         self.coeffs = torch.nn.ModuleList([
             NPLMnetwork(architecture, activation_func=activation, trainable=self.train_coeffs[i], weight_clip_value=None)
             for i in range(self.poly_degree)
         ])
 
+        # Load initial model if provided
         if initial_model is not None:
-            # Load the initial model weights
             self.load_state_dict(torch.load(initial_model))
-
+            
+            
     def forward(self, x):
+        """
+        Defines the forward pass of the model.
+
+        Args:
+            x (torch.Tensor): The input tensor.
+
+        Returns:
+            torch.Tensor: The output of the model.
+        """
         out = []
         for coeff in self.coeffs:
             out.append(coeff(x))
         
+        # Handling output based on the polynomial degree
         if self.poly_degree == 1:
             return out[0]
         else:
             return torch.cat(out, dim=1)
 
+
     def clip_weights(self, wc):
-        # Apply weight clipping to all layers
+        """
+        Applies weight clipping to all layers in the polynomial network.
+
+        Args:
+            wc (float): The weight clipping value.
+        """
         for module in self.coeffs:
             for layer in module.children():
                 if hasattr(layer, 'weight'):
@@ -256,16 +299,31 @@ class ParametricNet(torch.nn.Module):
 
 
     def train_model(self, feature_train, target_train, feature_val, target_val, total_epochs, optimizer, wc, patience, gather_after=1, batch_fraction=0.3):
-        self.train()
+        """
+        Trains the model using the provided training and validation data.
 
-        pars_total = []
-        loss_total = []
-        loss_val_total = []
+        Args:
+            feature_train (torch.Tensor): The features of the training data.
+            target_train (torch.Tensor): The targets of the training data.
+            feature_val (torch.Tensor): The features of the validation data.
+            target_val (torch.Tensor): The targets of the validation data.
+            total_epochs (int): The total number of epochs for training.
+            optimizer (torch.optim.Optimizer): The optimizer to use for training.
+            wc (float): Weight clipping value to be used during training.
+            patience (int): Number of epochs to wait before stopping if no improvement in validation loss.
+            gather_after (int, optional): Number of iterations after which to apply the optimizer step. Defaults to 1.
+            batch_fraction (float, optional): Fraction of the training data to use in each batch. Defaults to 0.3.
+        """
+        self.train()  # Set the model to training mode
 
-        for epoch in range(int(total_epochs/patience)):
+        pars_total = []  # List to store parameters of each epoch
+        loss_total = []  # List to store training loss of each epoch
+        loss_val_total = []  # List to store validation loss of each epoch
+
+        for epoch in range(int(total_epochs / patience)):
             running_loss = 0.0
             for p in range(patience):
-                # Batch selection
+                # Batch selection for mini-batch training
                 if batch_fraction < 1:
                     indices = random.sample(range(len(feature_train)), int(batch_fraction * len(feature_train)))
                     feature_tmp, target_tmp = feature_train[indices], target_train[indices]
@@ -275,124 +333,72 @@ class ParametricNet(torch.nn.Module):
                 feature_tmp, target_tmp = feature_tmp.to(self.device), target_tmp.to(self.device)
 
                 # Forward pass
-                optimizer.zero_grad()
-                output = self(feature_tmp)
-                loss = parametric_loss(target_tmp, output)
+                optimizer.zero_grad()  # Reset gradients
+                output = self(feature_tmp)  # Compute model output
+                loss = parametric_loss(target_tmp, output)  # Compute loss
 
                 # Backward pass and optimize
-                loss.backward()
+                loss.backward()  # Backpropagation
                 if (p + 1) % gather_after == 0:
-                    optimizer.step()
-                    optimizer.zero_grad()
+                    optimizer.step()  # Update weights
+                    optimizer.zero_grad()  # Reset gradients after updating
 
                 running_loss += loss.item()
                 
                 # Apply weight clipping
                 self.clip_weights(wc)
 
-            # Validation
-            self.eval()
+            # Validation phase
+            self.eval()  # Set the model to evaluation mode
             with torch.no_grad():
                 pred_val = self(feature_val.to(self.device))
                 loss_val = parametric_loss(target_val.to(self.device), pred_val)
 
-            # Logging
+            # Logging for monitoring
             pars_total.append([param.clone() for param in self.parameters()])
             loss_total.append(running_loss / patience)
             loss_val_total.append(loss_val.item())
 
-            print(f'epoch: {(epoch + 1)*patience}, loss: {loss_total[-1]}, val_loss: {loss_val_total[-1]}')
+            print(f'Epoch: {(epoch + 1) * patience}, Loss: {loss_total[-1]:.4f}, Val Loss: {loss_val_total[-1]:.4f}')
 
-        # Store the training history and update model state here
+        # Store training history and update model state
         self.training_history = {
             "loss": loss_total,
             "loss_val": loss_val_total
         }
         self.model_state = self.state_dict()
             
-            
-    # def train_model(self, feature_train, target_train, feature_val, target_val, total_epochs, optimizer, wc, patience, gather_after=1, batch_fraction=0.3):
-    #     self.train()  # Set the model to training mode
-
-    #     training_start = time.time()
-
-    #     # Tracking loss in tensors to avoid CPU-GPU transfer
-    #     loss_total = torch.tensor([], device=self.device)
-    #     loss_val_total = torch.tensor([], device=self.device)
-
-    #     for epoch in range(total_epochs // patience):
-    #         epoch_start = time.time()
-
-    #         # Training Phase
-    #         running_loss = 0.0
-    #         optimizer.zero_grad()  # Clear gradients at the start of each epoch
-
-    #         for step in range(patience):
-    #             # Custom batch sampling
-    #             indices = torch.randperm(len(feature_train))[:int(len(feature_train) * batch_fraction)]
-    #             feature_batch = feature_train[indices].to(self.device)
-    #             target_batch = target_train[indices].to(self.device)
-
-    #             output = self(feature_batch)
-    #             loss = parametric_loss(target_batch, output)
-    #             loss.backward()
-
-    #             # Gradient accumulation
-    #             if (step + 1) % gather_after == 0 or step == patience - 1:
-    #                 optimizer.step()
-    #                 optimizer.zero_grad()  # Clear gradients after optimization step
-    #                 self.clip_weights(wc)
-
-    #             running_loss += loss.item()
-
-    #         # Average training loss for the epoch
-    #         epoch_loss = running_loss / patience
-    #         loss_total = torch.cat((loss_total, torch.tensor([epoch_loss], device=self.device)))
-
-    #         # Validation Phase
-    #         val_loss_sum = 0.0
-    #         val_samples = 0
-    #         self.eval()
-    #         with torch.no_grad():
-    #             for idx in range(0, len(feature_val), batch_fraction * len(feature_val)):
-    #                 val_feature_batch = feature_val[idx:idx + int(batch_fraction * len(feature_val))].to(self.device)
-    #                 val_target_batch = target_val[idx:idx + int(batch_fraction * len(feature_val))].to(self.device)
-
-    #                 val_output = self(val_feature_batch)
-    #                 val_loss = parametric_loss(val_target_batch, val_output)
-
-    #                 val_loss_sum += val_loss.item() * val_feature_batch.size(0)
-    #                 val_samples += val_feature_batch.size(0)
-
-    #         avg_val_loss = val_loss_sum / val_samples
-    #         loss_val_total = torch.cat((loss_val_total, torch.tensor([avg_val_loss], device=self.device)))
-            
-    #         epoch_end = time.time()
-
-    #         if (epoch + 1) % patience == 0:
-    #             print(f'Epoch: {epoch + 1}/{total_epochs} ({epoch_end - epoch_start:.4f}s) | Training loss: {epoch_loss:.4f} | Validation loss: {avg_val_loss:.4f}')
-
-    #     training_end = time.time()
-    #     print(f"Training time: {training_end - training_start:.2f}s")
-
-    #     # Store the training history and update model state here
-    #     self.training_history = {
-    #         "loss": loss_total.cpu().numpy(),
-    #         "loss_val": loss_val_total.cpu().numpy()
-    #     }
-    #     self.model_state = self.state_dict()
-
         
-    def save_model(self, architecture, output_path='model_output'):
+    def save_model(self, output_path='model_output'):
+        """
+        Saves the current model state to a file.
+
+        Args:
+            architecture (str): A string identifier for the architecture, used in naming the saved file.
+            output_path (str, optional): The directory path where the model will be saved. Defaults to 'model_output'.
+        """
+        # Create the output directory if it does not exist
         if not os.path.exists(output_path):
             os.makedirs(output_path)
-        torch.save(self.model_state, f'{output_path}/parametric_{architecture}_final.pth')
+
+        # Save the model state
+        torch.save(self.model_state, f'{output_path}/parametric_deg{self.poly_degree}_{self.architecture}_final.pth')
 
 
-    def save_history(self, architecture, output_path='history_output'):
+    def save_history(self, output_path='history_output'):
+        """
+        Saves the training history to a file.
+
+        Args:
+            architecture (str): A string identifier for the architecture, used in naming the saved file.
+            output_path (str, optional): The directory path where the history will be saved. Defaults to 'history_output'.
+        """
+        # Create the history output directory if it does not exist
         if not os.path.exists(output_path):
             os.makedirs(output_path)
-        with h5py.File(f'{output_path}/parametric_{architecture}_history.h5', 'w') as f:
+
+        # Save the training history in HDF5 format
+        with h5py.File(f'{output_path}/parametric_deg{self.poly_degree}_{self.architecture}_history.h5', 'w') as f:
             f.create_dataset('pars', data=np.array(self.training_history["pars"]), compression='gzip')
             f.create_dataset('loss', data=np.array(self.training_history["loss"]), compression='gzip')
             f.create_dataset('loss_val', data=np.array(self.training_history["loss_val"]), compression='gzip')
