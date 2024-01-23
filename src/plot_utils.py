@@ -1053,3 +1053,193 @@ def plot_quantiles_evolution(
     if return_fig:
         return fig, ax
     
+    
+    
+def plot_nuisance_variations(
+    feature, 
+    targets, 
+    weights, 
+    nuisance, 
+    nu_list, 
+    nu_list_std, 
+    bins, 
+    figsize, 
+    fontsize, 
+    palette,
+    grid=True,
+    central_value=True,
+    color_centr_val="black",
+    xlabel="x",
+    ylabel="Events",
+    xscale="linear",
+    yscale="log",
+    lw=2,
+    xlims=None,
+    ylims=None,
+    ):
+    """
+    Plots the variations in data due to different nuisance parameters.
+
+    Args:
+        feature (np.ndarray): The feature array.
+        targets (np.ndarray): The targets array.
+        weights (np.ndarray): The weights array.
+        nuisance (np.ndarray): The nuisance parameters array.
+        nu_list (np.ndarray): Array of nuisance parameter values.
+        nu_list_std (np.ndarray): Standardized nuisance parameter values.
+        bins (np.ndarray): Bin edges for histogram.
+        figsize (tuple): Size of the figure.
+        fontsize (int): Font size for labels.
+        palette (list): List of colors for different nuisance parameters.
+        central_value (bool, optional): Whether to plot the central value reference hypothesis. Defaults to True.
+        color_centr_val (str, optional): Color of the central value reference hypothesis. Defaults to "black".
+        xlabel (str, optional): Label for the x-axis. Defaults to "x".
+        ylabel (str, optional): Label for the y-axis. Defaults to "Events".
+        xscale (str, optional): Scale of the x-axis. Defaults to "linear".
+        yscale (str, optional): Scale of the y-axis. Defaults to "log".
+        lw (int, optional): Line width of the histograms. Defaults to 2.
+    """
+    
+    # create figure and axes
+    fig, ax = plt.subplots(figsize=figsize)
+    if grid:
+        draw_grid(ax)
+    set_label_font(ax, fontsize)
+    set_tick_font(ax, fontsize - 2)
+
+    if central_value:
+        # extraact central value reference hypothesis and rescale to nuisance variations
+        x_ref = feature[(targets == 0)][:, 0]
+        w_ref = weights[(targets == 0)] * 1. / len(nu_list)
+
+        # plot the central value reference hypothesis
+        ax.hist(x_ref, bins=bins, weights=w_ref, histtype="step", ls="--", lw=lw, label="central value", color=color_centr_val)
+
+    for nu_iter in range(len(nu_list)):
+        nu     = nu_list[nu_iter]
+        nu_std = nu_list_std[nu_iter]
+
+        # extract the data for the current nuisance parameter value
+        x_nu = feature[(nuisance == nu_std) & (targets == 1)][:, 0]
+        w_nu = weights[(nuisance == nu_std) & (targets == 1)]
+
+        ax.hist(x_nu, bins=bins, weights=w_nu, histtype="step", lw=lw, label=f"$\\nu$ = {nu}$\sigma$", color=palette[nu_iter])
+    
+    ax.legend(fontsize=fontsize - 4, ncol=1, bbox_to_anchor=(1.0, 1.0), loc="upper left")
+    
+    ax.set_xscale(xscale)
+    ax.set_yscale(yscale)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+
+    if isinstance(xlims, tuple):
+        ax.set_xlim(xlims)
+    if isinstance(ylims, tuple):
+        ax.set_ylim(ylims)
+    
+    plt.show()
+
+
+def plot_nuisance_ratio(
+    feature, 
+    targets, 
+    weights, 
+    nuisance, 
+    nu_list, 
+    nu_list_std, 
+    bins, 
+    figsize, 
+    fontsize, 
+    palette,
+    grid=True,
+    zero_line=True,
+    marker="o",
+    markersize=10,
+    elinewidth=2,
+    capsize=5,
+    capthick=2,
+    xlabel="x",
+    ylabel=r'$\log[n(x|\nu) / n(x|0)]$',
+    xscale="linear",
+    yscale="linear",
+    xlims=None,
+    ylims=None,
+    ):
+    """
+    Plots the ratio of nuisance variations compared to the reference.
+
+    Args:
+        feature (np.ndarray): The feature array.
+        targets (np.ndarray): The targets array.
+        weights (np.ndarray): The weights array.
+        nuisance (np.ndarray): The nuisance parameters array.
+        nu_list (np.ndarray): Array of nuisance parameter values.
+        nu_list_std (np.ndarray): Standardized nuisance parameter values.
+        bins (np.ndarray): Bin edges for histogram.
+        figsize (tuple): Size of the figure.
+        fontsize (int): Font size for labels.
+        palette (list): List of colors for different nuisance parameters.
+    """
+    fig, ax = plt.subplots(figsize=figsize)
+    set_label_font(ax, fontsize)
+    set_tick_font(ax, fontsize - 2)
+    if grid:
+        draw_grid(ax)
+
+    if zero_line:
+        ax.axhline(y=0, color="black", ls="--", lw=2, alpha=0.5)
+        
+        
+    bincenters = (bins[1:] + bins[:-1]) / 2
+    binwidths  = bins[1:] - bins[:-1]
+
+    for nu_iter in range(len(nu_list)):
+        nu     = nu_list[nu_iter]
+        nu_std = nu_list_std[nu_iter]
+
+        x_ref = feature[(nuisance == nu_std) & (targets == 0)][:, 0]
+        w_ref = weights[(nuisance == nu_std) & (targets == 0)]
+
+        x_nu = feature[(nuisance == nu_std) & (targets == 1)][:, 0]
+        w_nu = weights[(nuisance == nu_std) & (targets == 1)]
+
+        histo_ref, _ = np.histogram(x_ref, bins=bins, weights=w_ref)
+        histo_nu, _ = np.histogram(x_nu, bins=bins, weights=w_nu)
+
+        histo_ref_sq, _ = np.histogram(x_ref, bins=bins, weights=w_ref ** 2)
+        histo_nu_sq, _ = np.histogram(x_nu, bins=bins, weights=w_nu ** 2)
+
+        ratio = histo_nu * 1.0 / histo_ref
+        ratio_err = ratio * np.sqrt((histo_nu_sq * 1.0 / histo_nu ** 2) + (histo_ref_sq * 1.0 / histo_ref ** 2))
+
+        log_ratio = np.log(ratio)
+        log_ratio_err = ratio_err / ratio
+
+        ax.errorbar(
+            x=bincenters,
+            y=log_ratio,
+            yerr=log_ratio_err,
+            xerr=binwidths / 2,
+            ls='',
+            marker=marker,
+            color=palette[nu_iter],
+            markersize=markersize,
+            elinewidth=elinewidth,
+            capsize=capsize,
+            capthick=capthick,
+            label=f'$\\nu$ = {nu}$\sigma$',
+        )
+
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.set_xscale(xscale)
+    ax.set_yscale(yscale)
+    
+    if isinstance(xlims, tuple):
+        ax.set_xlim(xlims)
+    if isinstance(ylims, tuple):
+        ax.set_ylim(ylims)
+    
+    ax.legend(fontsize=fontsize - 4, ncol=1, bbox_to_anchor=(1.0, 1.0), loc="upper left")
+    
+    plt.show()
