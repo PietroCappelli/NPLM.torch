@@ -1,5 +1,9 @@
+import random
 import torch 
-
+import h5py
+import os
+import numpy as np
+import time
 
 def loss_function(true, pred):
     # Compute the loss function
@@ -9,6 +13,22 @@ def loss_function(true, pred):
 
     loss = torch.sum((1 - y) * w * (torch.exp(f) - 1) - y * w * f)
     return loss
+
+
+def parametric_loss(true, pred):
+    y = true[:, 0]
+    w = true[:, 1]
+    nu = true[:, 2].unsqueeze(1)
+
+    f = torch.sum(pred * (nu ** torch.arange(1, pred.shape[1] + 1, device=pred.device)), dim=1)
+    c = 1. / (1 + torch.exp(f))
+    return 100 * torch.mean(y * w * c**2 + (1 - y) * w * (1 - c)**2)
+
+
+def delta_nu_poly(true, pred):
+    nu = true[:, 2].unsqueeze(1)
+    f = torch.sum(pred * (nu ** torch.arange(1, pred.shape[1] + 1, device=pred.device)), dim=1)
+    return f
 
 
 
@@ -73,6 +93,8 @@ class NPLMnetwork(torch.nn.Module):
         return x
     
     def clip_weights(self):
+        if self._weight_clip_value is None:
+            return
         # Apply weight clipping to all layers
         for layer in self.layers:
             with torch.no_grad():
@@ -177,3 +199,200 @@ class NPLMnetwork(torch.nn.Module):
         # Return the network's gradients
         return [layer.weight.grad for layer in self.layers] + [layer.bias.grad for layer in self.layers]
         
+        
+
+class ParametricNet(torch.nn.Module):
+    def __init__(
+        self, 
+        architecture  = [1, 10, 1], 
+        activation    = torch.nn.Sigmoid(), 
+        poly_degree   = 1,
+        initial_model = None, 
+        train_coeffs  = True,
+        device        = "cpu"
+        ):
+        super(ParametricNet, self).__init__()
+        
+        # Store the device on which the model is
+        self.device = device
+        self.to(self.device)
+        
+        self.poly_degree = poly_degree
+        self.training_history = None
+        self.model_state = None
+            
+
+        if not isinstance(train_coeffs, list):
+            self.train_coeffs = [train_coeffs for _ in range(self.poly_degree)]
+        else:
+            self.train_coeffs = train_coeffs
+        
+        self.coeffs = torch.nn.ModuleList([
+            NPLMnetwork(architecture, activation_func=activation, trainable=self.train_coeffs[i], weight_clip_value=None)
+            for i in range(self.poly_degree)
+        ])
+
+        if initial_model is not None:
+            # Load the initial model weights
+            self.load_state_dict(torch.load(initial_model))
+
+    def forward(self, x):
+        out = []
+        for coeff in self.coeffs:
+            out.append(coeff(x))
+        
+        if self.poly_degree == 1:
+            return out[0]
+        else:
+            return torch.cat(out, dim=1)
+
+    def clip_weights(self, wc):
+        # Apply weight clipping to all layers
+        for module in self.coeffs:
+            for layer in module.children():
+                if hasattr(layer, 'weight'):
+                    with torch.no_grad():
+                        layer.weight.data.clamp_(-wc, wc)
+
+
+    def train_model(self, feature_train, target_train, feature_val, target_val, total_epochs, optimizer, wc, patience, gather_after=1, batch_fraction=0.3):
+        self.train()
+
+        pars_total = []
+        loss_total = []
+        loss_val_total = []
+
+        for epoch in range(int(total_epochs/patience)):
+            running_loss = 0.0
+            for p in range(patience):
+                # Batch selection
+                if batch_fraction < 1:
+                    indices = random.sample(range(len(feature_train)), int(batch_fraction * len(feature_train)))
+                    feature_tmp, target_tmp = feature_train[indices], target_train[indices]
+                else:
+                    feature_tmp, target_tmp = feature_train, target_train
+                
+                feature_tmp, target_tmp = feature_tmp.to(self.device), target_tmp.to(self.device)
+
+                # Forward pass
+                optimizer.zero_grad()
+                output = self(feature_tmp)
+                loss = parametric_loss(target_tmp, output)
+
+                # Backward pass and optimize
+                loss.backward()
+                if (p + 1) % gather_after == 0:
+                    optimizer.step()
+                    optimizer.zero_grad()
+
+                running_loss += loss.item()
+                
+                # Apply weight clipping
+                self.clip_weights(wc)
+
+            # Validation
+            self.eval()
+            with torch.no_grad():
+                pred_val = self(feature_val.to(self.device))
+                loss_val = parametric_loss(target_val.to(self.device), pred_val)
+
+            # Logging
+            pars_total.append([param.clone() for param in self.parameters()])
+            loss_total.append(running_loss / patience)
+            loss_val_total.append(loss_val.item())
+
+            print(f'epoch: {(epoch + 1)*patience}, loss: {loss_total[-1]}, val_loss: {loss_val_total[-1]}')
+
+        # Store the training history and update model state here
+        self.training_history = {
+            "loss": loss_total,
+            "loss_val": loss_val_total
+        }
+        self.model_state = self.state_dict()
+            
+            
+    # def train_model(self, feature_train, target_train, feature_val, target_val, total_epochs, optimizer, wc, patience, gather_after=1, batch_fraction=0.3):
+    #     self.train()  # Set the model to training mode
+
+    #     training_start = time.time()
+
+    #     # Tracking loss in tensors to avoid CPU-GPU transfer
+    #     loss_total = torch.tensor([], device=self.device)
+    #     loss_val_total = torch.tensor([], device=self.device)
+
+    #     for epoch in range(total_epochs // patience):
+    #         epoch_start = time.time()
+
+    #         # Training Phase
+    #         running_loss = 0.0
+    #         optimizer.zero_grad()  # Clear gradients at the start of each epoch
+
+    #         for step in range(patience):
+    #             # Custom batch sampling
+    #             indices = torch.randperm(len(feature_train))[:int(len(feature_train) * batch_fraction)]
+    #             feature_batch = feature_train[indices].to(self.device)
+    #             target_batch = target_train[indices].to(self.device)
+
+    #             output = self(feature_batch)
+    #             loss = parametric_loss(target_batch, output)
+    #             loss.backward()
+
+    #             # Gradient accumulation
+    #             if (step + 1) % gather_after == 0 or step == patience - 1:
+    #                 optimizer.step()
+    #                 optimizer.zero_grad()  # Clear gradients after optimization step
+    #                 self.clip_weights(wc)
+
+    #             running_loss += loss.item()
+
+    #         # Average training loss for the epoch
+    #         epoch_loss = running_loss / patience
+    #         loss_total = torch.cat((loss_total, torch.tensor([epoch_loss], device=self.device)))
+
+    #         # Validation Phase
+    #         val_loss_sum = 0.0
+    #         val_samples = 0
+    #         self.eval()
+    #         with torch.no_grad():
+    #             for idx in range(0, len(feature_val), batch_fraction * len(feature_val)):
+    #                 val_feature_batch = feature_val[idx:idx + int(batch_fraction * len(feature_val))].to(self.device)
+    #                 val_target_batch = target_val[idx:idx + int(batch_fraction * len(feature_val))].to(self.device)
+
+    #                 val_output = self(val_feature_batch)
+    #                 val_loss = parametric_loss(val_target_batch, val_output)
+
+    #                 val_loss_sum += val_loss.item() * val_feature_batch.size(0)
+    #                 val_samples += val_feature_batch.size(0)
+
+    #         avg_val_loss = val_loss_sum / val_samples
+    #         loss_val_total = torch.cat((loss_val_total, torch.tensor([avg_val_loss], device=self.device)))
+            
+    #         epoch_end = time.time()
+
+    #         if (epoch + 1) % patience == 0:
+    #             print(f'Epoch: {epoch + 1}/{total_epochs} ({epoch_end - epoch_start:.4f}s) | Training loss: {epoch_loss:.4f} | Validation loss: {avg_val_loss:.4f}')
+
+    #     training_end = time.time()
+    #     print(f"Training time: {training_end - training_start:.2f}s")
+
+    #     # Store the training history and update model state here
+    #     self.training_history = {
+    #         "loss": loss_total.cpu().numpy(),
+    #         "loss_val": loss_val_total.cpu().numpy()
+    #     }
+    #     self.model_state = self.state_dict()
+
+        
+    def save_model(self, architecture, output_path='model_output'):
+        if not os.path.exists(output_path):
+            os.makedirs(output_path)
+        torch.save(self.model_state, f'{output_path}/parametric_{architecture}_final.pth')
+
+
+    def save_history(self, architecture, output_path='history_output'):
+        if not os.path.exists(output_path):
+            os.makedirs(output_path)
+        with h5py.File(f'{output_path}/parametric_{architecture}_history.h5', 'w') as f:
+            f.create_dataset('pars', data=np.array(self.training_history["pars"]), compression='gzip')
+            f.create_dataset('loss', data=np.array(self.training_history["loss"]), compression='gzip')
+            f.create_dataset('loss_val', data=np.array(self.training_history["loss_val"]), compression='gzip')
