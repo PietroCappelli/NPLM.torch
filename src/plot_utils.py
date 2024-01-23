@@ -215,7 +215,7 @@ def plot_ref_data(
         capthick   = 2
     )
     
-    ax_hist.legend(fontsize=fontsize-6)
+    ax_hist.legend(fontsize=fontsize-4)
     ax_hist.set_ylabel(ylabel, fontsize=fontsize)
     ax_hist.set_yscale(hist_yscale)
     if not ratio:
@@ -409,7 +409,7 @@ def plot_ref_data_reco(
         capthick   = 2
     )
     
-    ax_hist.legend(fontsize=fontsize-6)
+    ax_hist.legend(fontsize=fontsize-4)
     ax_hist.set_ylabel(ylabel, fontsize=fontsize)
     ax_hist.set_yscale(hist_yscale)
     if not ratio:
