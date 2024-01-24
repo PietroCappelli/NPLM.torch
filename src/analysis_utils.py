@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import mplhep as hep
 
 from hepstats.modeling import bayesian_blocks
+from nn_utils import delta_nu_poly
 
 
 def find_results(directory, name):
@@ -165,3 +166,68 @@ def load_binning(path: str, name: str):
     with h5py.File(path + name, "r") as f:
         bins = f["bins"][:]
     return bins
+
+
+def process_nuisance_data(feature, target, nu_std):
+    """
+    Helper function to process the data for a given nuisance parameter.
+    """
+    x_ref = feature[(target[:, 2] == nu_std) & (target[:, 0] == 0)][:, 0]
+    w_ref = target[:, 1][(target[:, 2] == nu_std) & (target[:, 0] == 0)]
+    
+    x_nu = feature[(target[:, 2] == nu_std) & (target[:, 0] == 1)][:, 0]
+    w_nu = target[:, 1][(target[:, 2] == nu_std) & (target[:, 0] == 1)]
+
+    return x_ref, w_ref, x_nu, w_nu
+
+
+def compute_log_ratio(x_ref, w_ref, x_nu, w_nu, bins):
+    """
+    Helper function to compute the logarithmic ratio of histograms.
+    """
+    histo_ref, _ = np.histogram(x_ref, bins=bins, weights=w_ref)
+    histo_nu, _ = np.histogram(x_nu, bins=bins, weights=w_nu)
+
+    histo_ref_sq, _ = np.histogram(x_ref, bins=bins, weights=w_ref ** 2)
+    histo_nu_sq, _ = np.histogram(x_nu, bins=bins, weights=w_nu ** 2)
+
+    ratio = histo_nu * 1.0 / histo_ref
+    ratio_err = ratio * np.sqrt((histo_nu_sq * 1.0 / histo_nu ** 2) + (histo_ref_sq * 1.0 / histo_ref ** 2))
+
+    log_ratio = np.log(ratio)
+    log_ratio_err = ratio_err / ratio
+
+    return log_ratio, log_ratio_err
+
+
+
+def compute_learned_log_ratio_nu(feature, target, model, nu_std, bins, device):
+    """
+    Helper function to compute the learned logarithmic ratio using the model.
+    """
+    maskR = (target[:, -1] == nu_std) & (target[:, 0] == 0)
+    maskD = (target[:, -1] == nu_std) & (target[:, 0] == 1)
+
+    featR = feature[maskR]
+    featD = feature[maskD]
+    
+    pred = model(feature.to(device))
+        
+    poly_test = delta_nu_poly(target.to(device), pred)
+    
+    if device.type == "cuda":
+        poly_test = poly_test.cpu()
+        deltaR = np.exp(poly_test[maskR].detach().numpy())
+    elif device.type == "cpu":
+        deltaR = np.exp(poly_test[maskR])
+    
+    weig = target[:, 1]
+    weigR = weig[maskR]
+    weigD = weig[maskD]
+
+    hist_sumD = np.histogram(featD[:, 0], weights=weigD, bins=bins)[0]
+    hist_sumW = np.histogram(featR[:, 0], weights=weigR * deltaR, bins=bins)[0]
+    hist_sum = np.histogram(featR[:, 0], weights=weigR, bins=bins)[0]
+
+    return np.log(hist_sumW / hist_sum)
+

@@ -5,6 +5,8 @@ import mplhep as hep
 import scipy.stats as stats
 import matplotlib as mpl
 
+from analysis_utils import process_nuisance_data, compute_log_ratio, compute_learned_log_ratio_nu
+
 
 def draw_cms_label(ax: plt.Axes, label: str = "Preliminary", rlabel: str = "NPLM", fontsize: int = 28):
     """
@@ -1163,6 +1165,7 @@ def plot_nuisance_ratio(
     yscale="linear",
     xlims=None,
     ylims=None,
+    analytic=None,
     ):
     """
     Plots the ratio of nuisance variations compared to the reference.
@@ -1178,6 +1181,20 @@ def plot_nuisance_ratio(
         figsize (tuple): Size of the figure.
         fontsize (int): Font size for labels.
         palette (list): List of colors for different nuisance parameters.
+        grid (bool, optional): Whether to draw the grid. Defaults to True.
+        zero_line (bool, optional): Whether to draw the zero line. Defaults to True.
+        marker (str, optional): Marker for the error bars. Defaults to "o".
+        markersize (int, optional): Marker size for the error bars. Defaults to 10.
+        elinewidth (int, optional): Line width for the error bars. Defaults to 2.
+        capsize (int, optional): Cap size for the error bars. Defaults to 5.
+        capthick (int, optional): Cap thickness for the error bars. Defaults to 2.
+        xlabel (str, optional): Label for the x-axis. Defaults to "x".
+        ylabel (str, optional): Label for the y-axis. Defaults to r'$\log[n(x|\nu) / n(x|0)]$'.
+        xscale (str, optional): Scale of the x-axis. Defaults to "linear".
+        yscale (str, optional): Scale of the y-axis. Defaults to "linear".
+        xlims (tuple, optional): Limits for the x-axis. Defaults to None.
+        ylims (tuple, optional): Limits for the y-axis. Defaults to None.
+        analytic (function, optional): Analytic function to plot. Defaults to None.
     """
     fig, ax = plt.subplots(figsize=figsize)
     set_label_font(ax, fontsize)
@@ -1187,6 +1204,26 @@ def plot_nuisance_ratio(
 
     if zero_line:
         ax.axhline(y=0, color="black", ls="--", lw=2, alpha=0.5)
+        
+        
+    if isinstance(xlims, tuple):
+        xgrid = np.linspace(xlims[0], xlims[1], 1000)
+    else:
+        xgrid = np.linspace(bins[0], bins[-1], 1000)
+
+    if analytic is not None:
+        # check that analytic is a function
+        if not callable(analytic):
+            raise TypeError("analytic must be a function")
+        for nu in nu_list:
+            ax.plot(
+                xgrid, 
+                np.log(analytic(xgrid, nu, 0.2)), 
+                color=palette[np.where(nu==nu_list)[0][0]], 
+                lw=2, 
+                ls="-",
+                alpha=0.5
+            )
         
         
     bincenters = (bins[1:] + bins[:-1]) / 2
@@ -1242,3 +1279,134 @@ def plot_nuisance_ratio(
     ax.legend(fontsize=fontsize - 4, ncol=1, bbox_to_anchor=(1.0, 1.0), loc="upper left")
     
     plt.show()
+
+
+def plot_nuisance_learned_ratio(
+    feature,
+    target,
+    model,
+    bins,
+    nu_list,
+    nu_list_std,
+    figsize,
+    fontsize,
+    palette,
+    marker='o',
+    markersize=10,
+    elinewidth=2,
+    capsize=5,
+    capthick=2,
+    xlabel="x",
+    ylabel=r'$\log[n(x|\nu) / n(x|0)]$',
+    xscale="log",
+    yscale="linear",
+    xlims=(1.1e-1, 0.3e2),
+    ylims=None,
+    device="cpu",
+    grid = True,
+    analytic = None,
+    zero_line = True,
+    ):
+    """
+    Plots the learned ratio of nuisance variations compared to the reference.
+
+    Args:
+        feature (np.ndarray): The feature array for the test set.
+        target (np.ndarray): The target array for the test set.
+        model (torch.nn.Module): The trained model for calculating learned ratios.
+        bins (np.ndarray): Bin edges for histogram.
+        nu_list (np.ndarray): Array of nuisance parameter values.
+        nu_list_std (np.ndarray): Standardized nuisance parameter values.
+        figsize (tuple): Size of the figure.
+        fontsize (int): Font size for labels.
+        palette (list): List of colors for different nuisance parameters.
+        marker (str, optional): Marker for the error bars. Defaults to 'o'.
+        markersize (int, optional): Marker size for the error bars. Defaults to 10.
+        elinewidth (int, optional): Line width for the error bars. Defaults to 2.
+        capsize (int, optional): Cap size for the error bars. Defaults to 5.
+        capthick (int, optional): Cap thickness for the error bars. Defaults to 2.
+        xlabel (str, optional): Label for the x-axis. Defaults to "x".
+        ylabel (str, optional): Label for the y-axis. Defaults to r'$\log[n(x|\nu) / n(x|0)]$'.
+        xscale (str, optional): Scale of the x-axis. Defaults to "log".
+        xlims (tuple, optional): Limits for the x-axis. Defaults to (1.1e-1, 0.3e2).
+        device (str, optional): Device for model inference. Defaults to "cpu".
+        grid (bool, optional): Whether to draw the grid. Defaults to True.
+        analytic (function, optional): Analytic function to plot. Defaults to None.
+        zero_line (bool, optional): Whether to draw the zero line. Defaults to True.
+    """
+    fig, ax = plt.subplots(figsize=figsize)
+    set_label_font(ax, fontsize)
+    set_tick_font(ax, fontsize - 2)
+    if grid:
+        draw_grid(ax)
+    
+    if zero_line:
+        ax.axhline(y=0, color="black", ls="--", lw=2, alpha=0.5)
+    
+    if analytic is not None:
+        if not callable(analytic):
+            raise TypeError("analytic must be a function")
+        
+        if isinstance(xlims, tuple):
+            xgrid = np.linspace(xlims[0], xlims[1], 1000)
+        else:
+            xgrid = np.linspace(bins[0], bins[-1], 1000)
+        
+        for nu in nu_list:
+            ax.plot(
+                xgrid, 
+                np.log(analytic(xgrid, nu, 0.2)), 
+                color=palette[np.where(nu==nu_list)[0][0]], 
+                lw=2, 
+                ls="-",
+                alpha=0.5
+            )
+
+
+    bincenters = (bins[1:] + bins[:-1]) / 2
+    binwidths = bins[1:] - bins[:-1]
+
+    for nu_iter in range(len(nu_list)):
+        nu = nu_list[nu_iter]
+        nu_std = nu_list_std[nu_iter]
+
+        # Process reference and nuisance data
+        x_ref, w_ref, x_nu, w_nu = process_nuisance_data(feature, target, nu_std)
+
+        # Compute and plot binned log-ratio
+        log_ratio, log_ratio_err = compute_log_ratio(x_ref, w_ref, x_nu, w_nu, bins)
+        ax.errorbar(
+            x=bincenters,
+            y=log_ratio,
+            yerr=log_ratio_err,
+            xerr=binwidths / 2,
+            marker=marker,
+            ls='',
+            lw=0,
+            label=f'$\\nu$ = {nu}$\\sigma$ binned',
+            color=palette[nu_iter],
+            markersize=markersize,
+            elinewidth=elinewidth,
+            capsize=capsize,
+            capthick=capthick,
+            alpha=0.25
+        )
+
+        # Compute and plot learned log-ratio
+        learned_log_ratio = compute_learned_log_ratio_nu(feature, target, model, nu_std, bins, device)
+        ax.plot(bincenters, learned_log_ratio, color=palette[nu_iter], lw=3, ls='--', label=f'$\\nu$ = {nu}$\\sigma$ learned')
+
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.set_xscale(xscale)
+    ax.set_yscale(yscale)
+
+    if isinstance(xlims, tuple):
+        ax.set_xlim(xlims)
+    if isinstance(ylims, tuple):
+        ax.set_ylim(ylims)    
+
+    ax.legend(fontsize=fontsize - 4, ncol=2, bbox_to_anchor=(1.0, 1.0), loc="upper left")
+
+    plt.show()
+
