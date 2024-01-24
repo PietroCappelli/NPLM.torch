@@ -1410,3 +1410,96 @@ def plot_nuisance_learned_ratio(
 
     plt.show()
 
+
+
+def plot_nuisance_learned_binned_difference(
+    feature, 
+    target, 
+    model, 
+    bins, 
+    nu_list, 
+    nu_list_std, 
+    figsize, 
+    fontsize, 
+    palette, 
+    device,
+    xlabel="x",
+    ylabel=r'$\log[n(x|\nu) / n(x|0)]$',
+    xscale="log",
+    yscale="linear",
+    xlims=(1.1e-1, 0.3e2),
+    ylims=None,
+    grid=True,
+    sharex=True,
+    sharey=True,
+    ):
+    """
+    Plots the normalized differences between learned and binned log-ratios for each nuisance parameter in subplots.
+
+    Args:
+        feature (np.ndarray): The feature array for the test set.
+        target (np.ndarray): The target array for the test set.
+        model (torch.nn.Module): The trained model for calculating learned ratios.
+        bins (np.ndarray): Bin edges for histogram.
+        nu_list (np.ndarray): Array of nuisance parameter values.
+        nu_list_std (np.ndarray): Standardized nuisance parameter values.
+        figsize (tuple): Size of the figure.
+        fontsize (int): Font size for labels.
+        palette (list): List of colors for different nuisance parameters.
+        device (str): Device for model inference.
+    """
+    fig, axes = plt.subplots(len(nu_list), 1, figsize=figsize, sharex=sharex, sharey=sharey)
+
+    for nu_iter, ax in enumerate(axes):
+        set_tick_font(ax, fontsize - 2)
+        set_label_font(ax, fontsize)
+        
+        if grid:
+            draw_grid(ax)
+            
+        nu = nu_list[nu_iter]
+        nu_std = nu_list_std[nu_iter]
+        
+        # Process reference and nuisance data
+        x_ref, w_ref, x_nu, w_nu = process_nuisance_data(feature, target, nu_std)
+
+        # Compute binned log-ratio
+        log_ratio, log_ratio_err = compute_log_ratio(x_ref, w_ref, x_nu, w_nu, bins)
+
+        # Compute learned log-ratio    
+        learned_log_ratio = compute_learned_log_ratio_nu(feature, target, model, nu_std, bins, device)
+        
+        bincenters = (bins[1:] + bins[:-1]) / 2
+        y = (learned_log_ratio - log_ratio) / log_ratio_err
+
+        ax.axhline(y=0, color='black', linestyle='--', lw=2, alpha=0.5)
+
+        ax.errorbar(
+            x=bincenters,
+            y=y,
+            yerr=np.ones_like(y),  # yerr is 1 as error in normalized difference is 1
+            marker='o',
+            ls='',
+            lw=0,
+            label=f'$\\nu$ = {nu}$\\sigma$',
+            color=palette[nu_iter], 
+            markersize=10,
+            elinewidth=2,
+            capsize=5,
+            capthick=2,
+            alpha=1
+        )
+        ax.legend(fontsize=fontsize - 4, bbox_to_anchor=(1, 1), loc='upper left')
+        ax.set_yscale(yscale)
+        ax.set_xscale(xscale)
+
+
+    axes[-1].set_xlabel(xlabel)
+    axes[0].set_ylabel(ylabel)
+
+    if isinstance(xlims, tuple):
+        axes[0].set_xlim(xlims)
+    if isinstance(ylims, tuple):
+        axes[0].set_ylim(ylims)
+
+    plt.show()
