@@ -101,7 +101,8 @@ def plot_ref_data(
     plot_name     : str = "ref_data",
     plot_path     : str = "./",
     plot_format   : str = "pdf",
-    return_fig    : bool = False
+    return_fig    : bool = False,
+    constrained   : bool = True,
     ):
     """
     Plots reference and data histograms with ratio plot.
@@ -170,7 +171,7 @@ def plot_ref_data(
     if ratio:
         fig, axes = plt.subplots(
             figsize             = figsize, 
-            constrained_layout  = True, 
+            constrained_layout  = constrained, 
             nrows               = 2, 
             ncols               = 1, 
             sharex              = True, 
@@ -181,7 +182,7 @@ def plot_ref_data(
     else:
         fig, ax_hist = plt.subplots(
             figsize             = figsize, 
-            constrained_layout  = True
+            constrained_layout  = constrained
         )
         
     ax_hist.set_xlim(bins[0], bins[-1])
@@ -309,6 +310,7 @@ def plot_ref_data_reco(
     binned_reco    : bool         = False,
     grid_reco      : torch.Tensor = None,
     grid_pred      : torch.Tensor = None,
+    constrained    : bool         = True,
     ):
     """
     Plots the reference, data and reconstructed histograms for a given feature.
@@ -360,7 +362,7 @@ def plot_ref_data_reco(
     if ratio:
         fig, axes = plt.subplots(
             figsize             = figsize, 
-            constrained_layout  = True, 
+            constrained_layout  = constrained, 
             nrows               = 2, 
             ncols               = 1, 
             sharex              = True, 
@@ -371,7 +373,7 @@ def plot_ref_data_reco(
     else:
         fig, ax_hist = plt.subplots(
             figsize             = figsize, 
-            constrained_layout  = True
+            constrained_layout  = constrained
         )
         
     ax_hist.set_xlim(bins[0], bins[-1])
@@ -509,7 +511,8 @@ def plot_loss_history(
     plot_name    : str = "loss_history",
     plot_path    : str = "./",
     plot_format  : str = "pdf",
-    return_fig   : bool = False
+    return_fig   : bool = False,
+    constrained  : bool = True,
     ):
     """
     Plots the loss history of a neural network training process.
@@ -541,7 +544,7 @@ def plot_loss_history(
     - ax (matplotlib.axes.Axes): The axis object. Only returned if return_fig is True.
     """
     
-    fig, ax = plt.subplots(figsize=figsize, constrained_layout=True)
+    fig, ax = plt.subplots(figsize=figsize, constrained_layout=constrained)
     
     if cms:
         draw_cms_label(ax=ax, label=cms_label, rlabel=cms_rlabel, fontsize=fontsize)
@@ -600,10 +603,11 @@ def plot_one_t(
     plot_name      : str   = "t_distribution",
     plot_path      : str   = "./",
     plot_format    : str   = "pdf",
-    return_fig     : bool  = False
+    return_fig     : bool  = False,
+    constrained    : bool  = True,
     ):  
 
-    fig, ax = plt.subplots(figsize=figsize, constrained_layout=True)
+    fig, ax = plt.subplots(figsize=figsize, constrained_layout=constrained)
     
     if cms:
         draw_cms_label(ax=ax, label=cms_label, rlabel=cms_rlabel, fontsize=fontsize)
@@ -754,10 +758,11 @@ def plot_two_t(
     plot_name          : str   = "t_distribution",
     plot_path          : str   = "./",
     plot_format        : str   = "pdf",
-    return_fig         : bool  = False
+    return_fig         : bool  = False,
+    constrained        : bool  = True,
     ):  
 
-    fig, ax = plt.subplots(figsize=figsize, constrained_layout=True)
+    fig, ax = plt.subplots(figsize=figsize, constrained_layout=constrained)
     
     if cms:
         draw_cms_label(ax=ax, label=cms_label, rlabel=cms_rlabel, fontsize=fontsize)
@@ -961,9 +966,10 @@ def plot_quantiles_evolution(
     plot_name    : str = "loss_history",
     plot_path    : str = "./",
     plot_format  : str = "pdf",
-    return_fig   : bool = False
+    return_fig   : bool = False,
+    constrained  : bool = True,
 ):
-    fig, ax = plt.subplots(figsize=figsize, constrained_layout=True)
+    fig, ax = plt.subplots(figsize=figsize, constrained_layout=constrained)
     
     if cms:
         draw_cms_label(ax=ax, label=cms_label, rlabel=cms_rlabel, fontsize=fontsize)
@@ -1077,6 +1083,8 @@ def plot_nuisance_variations(
     lw=2,
     xlims=None,
     ylims=None,
+    return_fig=False,
+    constrained=True,
     ):
     """
     Plots the variations in data due to different nuisance parameters.
@@ -1102,7 +1110,7 @@ def plot_nuisance_variations(
     """
     
     # create figure and axes
-    fig, ax = plt.subplots(figsize=figsize)
+    fig, ax = plt.subplots(figsize=figsize, constrained_layout=constrained)
     if grid:
         draw_grid(ax)
     set_label_font(ax, fontsize)
@@ -1137,8 +1145,12 @@ def plot_nuisance_variations(
         ax.set_xlim(xlims)
     if isinstance(ylims, tuple):
         ax.set_ylim(ylims)
-    
+        
     plt.show()
+        
+    if return_fig:
+        return fig, ax
+    
 
 
 def plot_nuisance_ratio(
@@ -1166,6 +1178,8 @@ def plot_nuisance_ratio(
     xlims=None,
     ylims=None,
     analytic=None,
+    return_fig=False,
+    constrained=True,
     ):
     """
     Plots the ratio of nuisance variations compared to the reference.
@@ -1196,7 +1210,7 @@ def plot_nuisance_ratio(
         ylims (tuple, optional): Limits for the y-axis. Defaults to None.
         analytic (function, optional): Analytic function to plot. Defaults to None.
     """
-    fig, ax = plt.subplots(figsize=figsize)
+    fig, ax = plt.subplots(figsize=figsize, constrained_layout=constrained)
     set_label_font(ax, fontsize)
     set_tick_font(ax, fontsize - 2)
     if grid:
@@ -1280,6 +1294,9 @@ def plot_nuisance_ratio(
     
     plt.show()
 
+    if return_fig:
+        return fig, ax
+    
 
 def plot_nuisance_learned_ratio(
     feature,
@@ -1306,6 +1323,8 @@ def plot_nuisance_learned_ratio(
     grid = True,
     analytic = None,
     zero_line = True,
+    return_fig=False,
+    constrained=True,
     ):
     """
     Plots the learned ratio of nuisance variations compared to the reference.
@@ -1334,7 +1353,7 @@ def plot_nuisance_learned_ratio(
         analytic (function, optional): Analytic function to plot. Defaults to None.
         zero_line (bool, optional): Whether to draw the zero line. Defaults to True.
     """
-    fig, ax = plt.subplots(figsize=figsize)
+    fig, ax = plt.subplots(figsize=figsize, constrained_layout=constrained)
     set_label_font(ax, fontsize)
     set_tick_font(ax, fontsize - 2)
     if grid:
@@ -1409,7 +1428,9 @@ def plot_nuisance_learned_ratio(
     ax.legend(fontsize=fontsize - 4, ncol=2, bbox_to_anchor=(1.0, 1.0), loc="upper left")
 
     plt.show()
-
+    
+    if return_fig:
+        return fig, ax
 
 
 def plot_nuisance_learned_binned_difference(
@@ -1432,6 +1453,8 @@ def plot_nuisance_learned_binned_difference(
     grid=True,
     sharex=True,
     sharey=True,
+    return_fig=False,
+    constrained=True,
     ):
     """
     Plots the normalized differences between learned and binned log-ratios for each nuisance parameter in subplots.
@@ -1448,7 +1471,7 @@ def plot_nuisance_learned_binned_difference(
         palette (list): List of colors for different nuisance parameters.
         device (str): Device for model inference.
     """
-    fig, axes = plt.subplots(len(nu_list), 1, figsize=figsize, sharex=sharex, sharey=sharey)
+    fig, axes = plt.subplots(len(nu_list), 1, figsize=figsize, sharex=sharex, sharey=sharey, constrained_layout=constrained)
 
     for nu_iter, ax in enumerate(axes):
         set_tick_font(ax, fontsize - 2)
@@ -1503,3 +1526,6 @@ def plot_nuisance_learned_binned_difference(
         axes[0].set_ylim(ylims)
 
     plt.show()
+    
+    if return_fig:
+        return fig, axes
