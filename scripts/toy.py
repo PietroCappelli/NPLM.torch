@@ -1,5 +1,5 @@
 import sys
-sys.path.insert(0, "/home/lai/nplm/src")
+sys.path.insert(0, "../src")
 
 from plot_utils import plot_ref_data, plot_ref_data_reco, plot_loss_history
 from analysis_utils import compute_df, produce_bins, save_binning, load_binning
@@ -138,8 +138,10 @@ def main(args, device):
     Returns:
         None
     """
+    args.debug = False
     
     if args.debug:
+        print("DEBUGGGING!!")
         toy_start = time()
     
     # Load the configuration file
@@ -349,6 +351,9 @@ def main(args, device):
             
         
     ##############
+    log_results(nplm_model.state_dict(), OUTPUT_PATH, str(args.index)+"_nplm_weights")
+    log_results(losses, OUTPUT_PATH, str(args.index)+"_losses")
+    print(f"data are saved in {OUTPUT_PATH}\n")
     
     if args.debug:
         toy_training_end = time()
@@ -406,11 +411,10 @@ def main(args, device):
             
         
             
-
     # After training, save the final model and the loss history
-    log_results(nplm_model.state_dict(), OUTPUT_PATH, str(args.index)+"_nplm_weights")
-    log_results(losses, OUTPUT_PATH, str(args.index)+"_losses")
-    
+    # log_results(nplm_model.state_dict(), OUTPUT_PATH, str(args.index)+"_nplm_weights")
+    # log_results(losses, OUTPUT_PATH, str(args.index)+"_losses")
+    # print(f"data are saved in {OUTPUT_PATH}\n")
     
 
 
@@ -424,8 +428,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
+    print(f'\nThe device used is: {device}\n')
     # force cpu
-    device = torch.device("cpu")
+    # device = torch.device("cpu")
     
     main(args, device)

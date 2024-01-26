@@ -8,22 +8,22 @@ from datetime import datetime
 from time import time
 
 INPUT_DIRECTORY  = "./"
-OUTPUT_DIRECTORY = "./output/"
+OUTPUT_DIRECTORY = "../output/test/"
 
 # configuration dictionary
-config_json = {
-    "N_Ref"             : 200_000,
-    "N_Bkg"             : 2_000,
-    "N_Sig"             : 10,
-    "SIG_LOC"           : 6.40,
-    "SIG_STD"           : 0.16,
-    "output_directory"  : OUTPUT_DIRECTORY,
-    "input_directory"   : INPUT_DIRECTORY,
-    "epochs"            : 200_000,
-    "patience"          : 5_000,
-    "architecture"      : [1, 4, 1],
-    "weight_clipping"   : 9, 
-}
+# config_json = {
+#     "N_Ref"             : 200_000,
+#     "N_Bkg"             : 2_000,
+#     "N_Sig"             : 10,
+#     "SIG_LOC"           : 6.40,
+#     "SIG_STD"           : 0.16,
+#     "output_directory"  : OUTPUT_DIRECTORY,
+#     "input_directory"   : INPUT_DIRECTORY,
+#     "epochs"            : 200_000,
+#     "patience"          : 5_000,
+#     "architecture"      : [1, 4, 1],
+#     "weight_clipping"   : 9,
+# }
 
 def create_config_file(config_table, path, name="config"):
     with open("%s/%s.json"%(path, name), "w") as outfile:
@@ -64,12 +64,12 @@ def create_debug_files(path: str, name: str):
 
 
 
-def main(args):
+def main(args, config_json):
     
     if args.debug:
         # start the global timer
         global_start = time()
-    
+        
     current_date  = str(datetime.now().year)        + "_"
     current_date += str(datetime.now().month)       + "_"
     current_date += str(datetime.now().day)         + "_"
@@ -106,9 +106,9 @@ def main(args):
     if not os.path.exists(config_json["output_directory"]):
         os.makedirs(config_json["output_directory"])
         
-    if args.debug:
-        # create the debug files
-        create_debug_files(config_json["output_directory"], "debug")
+    # if args.debug:
+    #     # create the debug files
+    #     create_debug_files(config_json["output_directory"], "debug")
     
     # create the config file
     config_name = f"config_{current_date}"
@@ -118,7 +118,8 @@ def main(args):
         # launch toys
         for i in range(args.toys):
             print("Running toy %i / %i" %(i+1, args.toys))
-            os.system("python %s/%s -j %s -i %i -d %s" %(os.getcwd(), args.pyscript, config_json["jsonfile"], i, str(args.debug)))
+            # os.system("python %s/%s -j %s -i %i --debug %s" %(os.getcwd(), args.pyscript, config_json["jsonfile"], i, str(args.debug)))
+            os.system("python %s/%s -j %s -i %i --debug %s" %(os.getcwd(), args.pyscript, config_json["jsonfile"], i, False))
     
     if not args.local:
         # launch toys
@@ -127,6 +128,7 @@ def main(args):
         for i in range(args.toys):        
             # src file
             script_src = open("%s/%i.src" %(label, i) , 'w')
+            
             script_src.write("#!/bin/bash\n")
             script_src.write("source /cvmfs/sft.cern.ch/lcg/views/LCG_99/x86_64-centos7-gcc8-opt/setup.sh\n")
             script_src.write("python %s/%s -j %s -i %i -d %s" %(os.getcwd(), args.pyscript, config_json["jsonfile"], i, str(args.debug)))
@@ -160,11 +162,30 @@ if __name__ == "__main__":
     
     parser = argparse.ArgumentParser()
     
-    parser.add_argument("-p", "--pyscript", type=str,  help="name of python script to execute", required=True)
-    parser.add_argument("-t", "--toys",     type=int,  help="number of toys to run",            required=True)
-    parser.add_argument("-l", "--local",    type=bool, help="run locally",                      default=False)
-    parser.add_argument("-d", "--debug",    type=bool, help="debug timing",                     default=False)
+    parser.add_argument("-p", "--pyscript", type=str,   help="name of python script to execute", required=True)
+    parser.add_argument("-t", "--toys",     type=int,   help="number of toys to run",            required=True)
+    parser.add_argument("-l", "--local",    type=bool,  help="run locally",                      default=False)
+    parser.add_argument("-d", "--debug",    type=bool,  help="debug timing",                     default=False)
+    parser.add_argument("-w", "--wclip",    type=float, help="w clipping value",                 required=True)
     
     args = parser.parse_args()
+    print(f"args: {args}")
+    print(f"args: {args.wclip}")
     
-    main(args)
+    c_json = {
+        "N_Ref"             : 200_000,
+        "N_Bkg"             : 2_000,
+        "N_Sig"             : 10,
+        "SIG_LOC"           : 6.40,
+        "SIG_STD"           : 0.16,
+        "output_directory"  : OUTPUT_DIRECTORY,
+        "input_directory"   : INPUT_DIRECTORY,
+        "epochs"            : 200_000,
+        "patience"          : 5_000,
+        "architecture"      : [1, 4, 1],
+        "weight_clipping"   : args.wclip,
+    }
+    
+    print(c_json)
+    
+    main(args, config_json = c_json)
