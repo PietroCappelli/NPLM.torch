@@ -605,6 +605,8 @@ def plot_one_t(
     plot_format    : str   = "pdf",
     return_fig     : bool  = False,
     constrained    : bool  = True,
+    plot_w         : bool  = False,
+    wclip          : float = 9.0,
     ):  
 
     fig, ax = plt.subplots(figsize=figsize, constrained_layout=constrained)
@@ -686,17 +688,28 @@ def plot_one_t(
     ax.set_xlim(t_bins[0], t_bins[-1])
     
     if show_hist:
-        ax.legend([chisq, h], [chi2_label, hist_label], fontsize=fontsize-6)
+        if plot_w: 
+            ax.legend([chisq, h], [chi2_label, hist_label], fontsize=fontsize-6, title = "$\it{w clip}$ = " + str(wclip), title_fontsize = fontsize-4)
+        else:
+            ax.legend([chisq, h], [chi2_label, hist_label], fontsize=fontsize-6)
     elif not show_hist and show_error:
-        ax.legend([chisq, err], [chi2_label, hist_label], fontsize=fontsize-6)
+        if plot_w:
+            ax.legend([chisq, err], [chi2_label, hist_label], fontsize=fontsize-6, title = "$\it{w clip}$ = " + str(wclip), title_fontsize = fontsize-4)
+        else: 
+            ax.legend([chisq, err], [chi2_label, hist_label], fontsize=fontsize-6)
     else:
-        ax.legend([chisq], [chi2_label], fontsize=fontsize-6)
-        
+        if plot_w: 
+            ax.legend([chisq], [chi2_label], fontsize=fontsize-6, title = "$\it{w clip}$ = " + str(wclip))
+        else: 
+            ax.legend([chisq], [chi2_label], fontsize=fontsize-5)
+            
+            
+    ax.axvline(x=np.median(t_distribution), color='gray', linestyle='--', linewidth=4, alpha=0.5)
     ax.set_xlabel(xlabel, fontsize=fontsize)
     ax.set_ylabel(ylabel, fontsize=fontsize)
     
     if save_plot:
-        fig.savefig(plot_path + plot_name + "." + plot_format, format=plot_format, bbox_inches="tight", dpi=300, facecolor="white")
+        fig.savefig(plot_path + plot_name + "_wclip" + str(wclip) + "." + plot_format, format=plot_format, bbox_inches="tight", dpi=300, facecolor="white")
         
     if show_plot:
         plt.show()
@@ -705,7 +718,6 @@ def plot_one_t(
         return fig, ax
     
     return
-
 
 
 def plot_two_t(
@@ -942,6 +954,146 @@ def plot_two_t(
     return
 
 
+# def plot_one_t_wclip(
+#     t_distribution : np.ndarray,
+#     t_bins         : np.ndarray,
+#     chi2           : stats._distn_infrastructure.rv_continuous_frozen,
+#     chi2_grid      : np.ndarray,
+#     show_hist      : bool = True,
+#     show_error     : bool = False,
+#     compute_rate   : bool = False,
+#     err_marker     : str  = "o",
+#     err_markersize : float = 10,
+#     err_capsize    : float = 5,
+#     err_elinewidth : float = 2,
+#     err_capthick   : float = 2,
+#     err_color      : str   = "black",
+#     figsize        : tuple = (14, 10),
+#     fontsize       : int   = 36,
+#     cms            : bool  = False,
+#     cms_label      : str   = "",
+#     cms_rlabel     : str   = "",
+#     hist_ecolor    : str   = "black",
+#     hist_fcolor    : str   = "black",
+#     chi2_color     : str   = "red",
+#     hist_lw        : float = 4,
+#     chi2_lw        : float = 4,
+#     hist_type      : str   = "step",
+#     hist_label     : str   = "Data",
+#     chi2_label     : str   = r"$\chi^2$",
+#     xlabel         : str   = r"$t$",
+#     ylabel         : str   = "Density",
+#     show_plot      : bool  = True,
+#     save_plot      : bool  = False,
+#     plot_name      : str   = "t_distribution",
+#     plot_path      : str   = "./",
+#     plot_format    : str   = "pdf",
+#     return_fig     : bool  = False,
+#     constrained    : bool  = True,
+#     wclip          : float = 9.0,
+#     ):  
+
+#     fig, ax = plt.subplots(figsize=figsize, constrained_layout=constrained)
+    
+#     if cms:
+#         draw_cms_label(ax=ax, label=cms_label, rlabel=cms_rlabel, fontsize=fontsize)
+#     set_label_font(ax=ax, fontsize=fontsize)
+#     set_tick_font(ax=ax, fontsize=fontsize-4)
+
+    
+#     t_bincenters = (t_bins[1:] + t_bins[:-1]) / 2
+#     t_binwidths   = (t_bins[1:] - t_bins[:-1])
+    
+#     hist_, _  = np.histogram(t_distribution, bins=t_bins, density=False)
+#     hist_norm = np.sum([hist_[i] * t_binwidths[i] for i in range(t_bincenters.size)]) 
+#     hist      = hist_ / hist_norm   
+#     hist_err  = np.sqrt(hist / hist_norm)
+    
+#     if compute_rate:
+#         n_bins    = t_bincenters.size
+#         n_obs     = t_distribution.size
+#         exp_rate  = (n_obs / n_bins) / hist_norm
+#         exp_err   = np.sqrt(exp_rate / hist_norm)
+
+#         hist_err  = [hist_err[i] if hist_err[i] > 0 else exp_err for i in range(n_bins)]
+#     else:
+#         mask_hist_not_zero = (hist != 0)
+#         t_bincenters       = t_bincenters[mask_hist_not_zero]
+#         hist               = hist[mask_hist_not_zero]
+#         hist_err           = hist_err[mask_hist_not_zero]
+        
+#     if show_hist:
+#         if hist_type == "step":
+#             h = ax.hist(
+#                 t_bincenters,
+#                 bins     = t_bins,
+#                 weights  = hist,
+#                 histtype = hist_type,
+#                 label    = hist_label,
+#                 color    = hist_ecolor,
+#                 lw       = hist_lw,
+#             )[-1][0]
+        
+#         if hist_type == "stepfilled":
+#             h = ax.hist(
+#                 t_bincenters,
+#                 bins      = t_bins,
+#                 weights   = hist,
+#                 histtype  = hist_type,
+#                 label     = hist_label,
+#                 edgecolor = hist_ecolor,
+#                 facecolor = hist_fcolor,
+#                 lw        = hist_lw,
+#             )[-1][0]
+    
+#     if show_error:
+#         err = ax.errorbar(
+#             x          = t_bincenters,
+#             y          = hist,
+#             yerr       = hist_err,
+#             marker     = err_marker,
+#             markersize = err_markersize,
+#             capsize    = err_capsize,
+#             elinewidth = err_elinewidth,
+#             capthick   = err_capthick,
+#             color      = err_color,
+#             ls         = "",
+#         )
+        
+#     chisq = ax.plot(
+#         chi2_grid,
+#         chi2.pdf(chi2_grid),
+#         label = chi2_label,
+#         color = chi2_color,
+#         lw    = chi2_lw,
+#     )[0]
+    
+#     ax.set_ylim(bottom=0)
+#     ax.set_xlim(t_bins[0], t_bins[-1])
+    
+#     if show_hist:
+#         ax.legend([chisq, h], [chi2_label, hist_label], fontsize=fontsize-6, title = "wclip: " + str(wclip))
+#     elif not show_hist and show_error:
+#         ax.legend([chisq, err], [chi2_label, hist_label], fontsize=fontsize-6, title = "wclip: " + str(wclip))
+#     else:
+#         ax.legend([chisq], [chi2_label], fontsize=fontsize-6, title = "wclip: " + str(wclip))
+        
+#     ax.set_xlabel(xlabel, fontsize=fontsize)
+#     ax.set_ylabel(ylabel, fontsize=fontsize)
+    
+#     if save_plot:
+#         fig.savefig(plot_path + plot_name + "wclip" + str(wclip) + "." + plot_format, format=plot_format, bbox_inches="tight", dpi=300, facecolor="white")
+        
+#     if show_plot:
+#         plt.show()
+        
+#     if return_fig:
+#         return fig, ax
+    
+#     return
+
+
+
 def plot_quantiles_evolution(
     t_history,
     quantile_list,
@@ -1151,7 +1303,6 @@ def plot_nuisance_variations(
     if return_fig:
         return fig, ax
     
-
 
 def plot_nuisance_ratio(
     feature, 
