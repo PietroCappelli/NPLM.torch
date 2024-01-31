@@ -8,7 +8,7 @@ from datetime import datetime
 from time import time
 
 INPUT_DIRECTORY  = "./"
-OUTPUT_DIRECTORY = "../output/test/"
+OUTPUT_DIRECTORY = "../output/1D_w/second/"
 
 # configuration dictionary
 # config_json = {
@@ -175,7 +175,7 @@ if __name__ == "__main__":
     c_json = {
         "N_Ref"             : 200_000,
         "N_Bkg"             : 2_000,
-        "N_Sig"             : 10,
+        "N_Sig"             : 0,
         "SIG_LOC"           : 6.40,
         "SIG_STD"           : 0.16,
         "output_directory"  : OUTPUT_DIRECTORY,

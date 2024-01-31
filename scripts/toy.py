@@ -186,15 +186,20 @@ def main(args, device):
     if args.debug:
         toy_data_gen_start = time()
         
+        
+    '''
+        IMPORT OR GENERATE DATA
+    '''
+    
+    
     feature, target = generate_data(config_json)
+    
     
     if args.debug:
         toy_data_gen_end = time()
         toy_data_gen_time = toy_data_gen_end - toy_data_gen_start
         print(f"Data generation time: {toy_data_gen_time:.5f} s")
         
-        
-    
     
     if args.debug:
         toy_nplm_init_start = time()
