@@ -188,7 +188,7 @@ if __name__ == "__main__":
         "output_directory"  : OUTPUT_DIRECTORY,
         "input_directory"   : INPUT_DIRECTORY,
         "epochs"            : 500_000,
-        "patience"          : 5_000,
+        "patience"          : 2_000,
         "architecture"      : [5, 5, 5, 5, 1],
         "weight_clipping"   : args.wclip,
     }

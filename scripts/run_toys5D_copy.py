@@ -7,7 +7,7 @@ import torch
 
 from datetime import datetime
 from time import time
-from toy5D_copy import load_dataset, generate_data
+from Gtoy5D import load_dataset, generate_data
 
 INPUT_DIRECTORY  = "./"
 OUTPUT_DIRECTORY = "../output/5D/first/"

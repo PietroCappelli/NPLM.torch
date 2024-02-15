@@ -2,18 +2,71 @@ import os
 import sys
 sys.path.insert(0, "../src")
 
-from plot_utils import plot_ref_data, plot_ref_data_reco, plot_loss_history
-from analysis_utils import compute_df, produce_bins, save_binning, load_binning
-from nn_utils import NPLMnetwork, loss_function, Dataset5D
+# from plot_utils import plot_ref_data, plot_ref_data_reco, plot_loss_history
+from analysis_utils import compute_df
+from nn_utils import loss_function
+from torch.utils.data import Dataset
 
 from argparse import ArgumentParser
-from time import time
+import time
 import json, datetime
 import torch
 import h5py
 import numpy as np
 
+from NPLM.NNutils import *
+from NPLM.PLOTutils import *
 
+class Dataset5D(Dataset):
+
+    # return a tensor of the data contained in a single file
+
+    def __init__(self, file_paths, normalize=True, cut = True):
+        self.file_paths = file_paths
+        self.normalize = normalize
+        self.cut = cut
+        
+        self.means = []
+        self.stds = []
+
+    def __len__(self):
+        return len(self.file_paths)
+
+    def __getitem__(self, idx):
+        file_path = self.file_paths[idx]
+        
+        with h5py.File(file_path, 'r') as f:
+            # Select only the 5 features
+            pt1  = torch.tensor(f['pt1'][:])
+            pt2  = torch.tensor(f['pt2'][:])
+            eta1 = torch.tensor(f['eta1'][:])
+            eta2 = torch.tensor(f['eta2'][:])
+            delta_phi = torch.tensor(f['delta_phi'][:])
+            mll = torch.tensor(f['mll'][:])
+            
+            features = torch.stack([pt1,pt2,eta1,eta2,delta_phi, mll], dim=1)
+
+        return features   
+    
+def standardize_dataset(feature, mean_REF=[], std_REF=[]):                                                                                                                                
+    feature_std = np.copy(feature)
+    for j in range(feature.shape[1]):
+        vec  = feature_std[:, j]
+        if len(mean_REF)==0:
+            mean = np.mean(vec)
+        else:
+            mean = mean_REF[j]
+        if len(std_REF)==0:
+            std  = np.std(vec)
+        else:
+            std  = std_REF[j]
+        if np.min(vec) < 0:
+            vec = vec- mean
+            vec = vec *1./ std
+        elif np.max(vec) > 1.0:                                                                               
+            vec = vec *1./ mean
+        feature_std[:, j] = vec
+    return feature_std
 
 def load_config(path: str):
     """
@@ -89,10 +142,9 @@ def load_dataset(DATA_PATH : str, OUTPUT_PATH : str,  NP = 'EFT'):
     #     DATA_FEAT = torch.cat([np_dataset[i] for i in range(len(np_dataset))], dim=0)
 
     torch.save({'REF_features':REF_FEAT, "DATA_features": DATA_FEAT}, OUTPUT_PATH)
+    return REF_FEAT.shape[0], DATA_FEAT.shape[0]
 
-
-
-def generate_data(config_json: dict):
+def generate_data(config_json: dict, used_idx_bkg, used_idx_sig):
     """Generate synthetic data for training and testing a machine learning model.
 
     Args:
@@ -113,13 +165,11 @@ def generate_data(config_json: dict):
     N_EVENTS_R = REF_FEAT.shape[0]
     N_EVENTS_D = DATA_FEAT.shape[0]
     
-    # poisson fluctuate the number of events in each sample
-    N_bkg_p = int(torch.distributions.Poisson(rate=config_json["N_Bkg"]).sample())
-    N_sig_p = int(torch.distributions.Poisson(rate=config_json["N_Sig"]).sample())
-    
-    # EXTRACT RANDOM EVENTS FROM THE INPUT DATASET
-    # indeces for the Reference and the BKG dataset
-    idxs    = torch.multinomial(torch.ones(N_EVENTS_R), num_samples=(config_json["N_Ref"] + N_bkg_p), replacement=False)
+    ## Filter the data
+    idx_available_bkg = np.setdiff1d(np.arange(N_EVENTS_R), used_idx_bkg ) 
+    idx_available_sig = np.setdiff1d(np.arange(N_EVENTS_D), used_idx_sig )
+
+    idxs    = np.random.choice(idx_available_bkg, size=(config_json["N_Ref"] + config_json['N_Bkg']), replace=False)   
     idx_R   = idxs[:config_json["N_Ref"]]
     idx_bkg = idxs[config_json["N_Ref"]:]
     
@@ -129,20 +179,39 @@ def generate_data(config_json: dict):
     
     # SIGNAL
     if (config_json["N_Sig"]!=0):
-        idx_data = torch.multinomial(torch.ones(N_EVENTS_D), num_samples=N_sig_p, replacement=False)
-        feature_sig = DATA_FEAT[idx_data]
+        # idx_sig = torch.multinomial(torch.ones(N_EVENTS_D), num_samples=config_json['N_Sig'], replacement=False)
+        idx_sig = np.random.choice(idx_available_sig, size=config_json['N_Sig'], replace=False)
+        feature_sig = DATA_FEAT[idx_sig]
     elif(config_json["N_Sig"]==0):
-        feature_sig = torch.empty((0,5))
+        idx_sig=np.array(())
+        feature_sig = torch.empty((0,6))
     
     feature_data = torch.cat((feature_sig, feature_bkg))
 
+    ## features cuts
+    feature_ref = feature_ref[ feature_ref[:,5] >= 60 ]
+    feature_ref = feature_ref[ torch.logical_and(feature_ref[:,0] >= 20, feature_ref[:,1] >=20 ) ]
+    feature_ref = feature_ref[ torch.logical_and(abs(feature_ref[:,2]) <= 2.4 , abs(feature_ref[:,3]) <= 2.4 )]
+
+    feature_data = feature_data[ feature_data[:,5] >= 60 ]
+    feature_data = feature_data[ torch.logical_and(feature_data[:,0] >= 20, feature_data[:,1] >=20 ) ]
+    feature_data = feature_data[ torch.logical_and(abs(feature_data[:,2]) <= 2.4 , abs(feature_data[:,3]) <= 2.4 )]
+
+    ## delete the mll feature
+    feature_ref  = feature_ref[:,:5]
+    feature_data = feature_data[:,:5]
+
+    ## normalize the features
+    standardize_dataset(feature_ref)
+    standardize_dataset(feature_data)
+    
     # set target: 0 for ref and 1 for data 
-    target_ref = torch.zeros((config_json["N_Ref"],1), dtype=torch.float32) 
-    target_data = torch.ones((N_bkg_p + N_sig_p,1), dtype=torch.float32)
+    target_ref = torch.zeros((feature_ref.shape[0],1), dtype=torch.float32) 
+    target_data = torch.ones((feature_data.shape[0],1), dtype=torch.float32)
 
     # initialize weights as ones * N_D / N_R
-    weights_ref  = torch.ones((config_json["N_Ref"], 1), dtype=torch.float32)   * (config_json["N_Bkg"] / config_json["N_Ref"])
-    weights_data = torch.ones((N_sig_p + N_bkg_p, 1), dtype=torch.float32) 
+    weights_ref  = torch.ones((feature_ref.shape[0], 1), dtype=torch.float32)   * (config_json["N_Bkg"] / config_json["N_Ref"])
+    weights_data = torch.ones((feature_data.shape[0], 1), dtype=torch.float32) 
 
     feature = torch.cat((feature_ref, feature_data), dim=0)
     target  = torch.cat((target_ref,  target_data),  dim=0)
@@ -151,55 +220,18 @@ def generate_data(config_json: dict):
     # concatenate the weights to the target
     target = torch.cat((target, weights), dim=1)
     # SET to the same type
-    target  = target
     feature = feature.type(torch.float32)
 
-    return feature, target
+    torch.save({'features':feature, "target": target}, config_json['DATASET_PATH'])
 
-
-def initialize_nplm(
-    architecture      : list, 
-    activation_func   : callable, 
-    weight_clip_value : float, 
-    trainable         : bool  = True, 
-    learning_rate     : float = 0.001
-    ):
-    """
-    Initializes an NPLM network with the given architecture, activation function, weight clip value, device, 
-    and whether the network is trainable or not. Also initializes an optimizer with the given learning rate.
-    
-    Args:
-    - architecture (list): A list of integers representing the number of neurons in each layer of the network.
-    - activation_func (callable): The activation function to use in the network.
-    - weight_clip_value (float): The maximum absolute value of the weights in the network.
-    - trainable (bool, optional): Whether the network is trainable or not. Defaults to True.
-    - learning_rate (float, optional): The learning rate to use for the optimizer. Defaults to 0.001.
-    
-    Returns:
-    - nplm_model (NPLMnetwork): The initialized NPLM network.
-    - optimizer (torch.optim.Adam): The initialized optimizer.
-    """
-    
-    # NPLM network
-    nplm_model = NPLMnetwork(
-        architecture      = architecture,
-        activation_func   = activation_func,
-        weight_clip_value = weight_clip_value,
-        trainable         = trainable
-    )
-    
-    # Optimizer
-    optimizer = torch.optim.Adam(nplm_model.parameters(), lr=learning_rate)
-    
-    return nplm_model, optimizer
+    return idx_bkg, idx_sig
 
 
 def log_results(obj, path, name):
     torch.save(obj, path + name + ".pth")
     
 
-
-def main(args, device, data):
+def main(args, device):
     """
     Main function for running the NPLM network.
 
@@ -213,12 +245,12 @@ def main(args, device, data):
     """
     args.debug = False
     
-    toy_start = time()
+    toy_start = time.time()
     
     
     if args.debug:
         print("DEBUGGGING!!")
-        toy_start = time()
+        toy_start = time.time()
     
     # Load the configuration file
     config_json = load_config(args.jsonfile)
@@ -252,7 +284,9 @@ def main(args, device, data):
     N_INPUTS     = ARCHITECTURE[0]
     WCLIP        = config_json["weight_clipping"]
     ACTIVATION   = torch.nn.Sigmoid()
-    DF           = compute_df(ARCHITECTURE)
+    DF           = 96
+    # DF           = compute_df(ARCHITECTURE)
+    
     
     # Paths
     INPUT_PATH     = config_json["input_directory"]
@@ -260,57 +294,65 @@ def main(args, device, data):
 
     
     if args.debug:
-        toy_data_gen_start = time()
+        toy_data_gen_start = time.time()
         
         
     '''
         IMPORT OR GENERATE DATA
     '''
+    # feature, target = generate_data(config_json)
     
-    feature, target = generate_data(config_json)
+    loaded_data = torch.load(config_json['DATASET_PATH'])
     
+    feature = loaded_data['features'].numpy()
+    target  = loaded_data['target'].numpy()
+
     if args.debug:
-        toy_data_gen_end = time()
+        toy_data_gen_end = time.time()
         toy_data_gen_time = toy_data_gen_end - toy_data_gen_start
         print(f"Data generation time: {toy_data_gen_time:.5f} s")
         
     
     if args.debug:
-        toy_nplm_init_start = time()
+        toy_nplm_init_start = time.time()
     
-    nplm_model, optimizer = initialize_nplm(
-        architecture      = ARCHITECTURE,
-        activation_func   = ACTIVATION,
-        weight_clip_value = WCLIP,
-        trainable         = True,
-        learning_rate     = 0.001
-    )
+    '''
+    DEFINE THE MODEL
+    '''
+    nplm_model = imperfect_model(input_shape=(None, feature.shape[1]),
+                      NU_S=[], NUR_S=[], NU0_S=[], SIGMA_S=None, 
+                      NU_N=None, NUR_N=None, NU0_N=None, SIGMA_N=None,
+                      correction="", shape_dictionary_list=[],
+                      BSMarchitecture=ARCHITECTURE, BSMweight_clipping=WCLIP, train_f=True, train_nu=False)
+    print(nplm_model.summary())
     
     if args.debug:
-        toy_nplm_init_end = time()
+        toy_nplm_init_end = time.time()
         toy_nplm_init_time = toy_nplm_init_end - toy_nplm_init_start
         print(f"NPLM initialization time: {toy_nplm_init_time:.5f} s")
 
         
     
     if args.debug:
-        toy_push_start = time()
+        toy_push_start = time.time()
         
-    # Push the data to the device
-    feature = feature.to(device)
-    target  = target.to(device)
+    # # Push the data to the device
+    # feature = feature.to(device)
+    # target  = target.to(device)
 
-    # Push the model to the device
-    nplm_model.to(device)
+    # # Push the model to the device
+    # nplm_model.to(device)
 
     if args.debug:
-        toy_push_end = time()
+        toy_push_end = time.time()
         toy_push_time = toy_push_end - toy_push_start
         print(f"Pushing to device time: {toy_push_time:.5f} s")
         
         
     
     ## TRAINING ##
+    
+    nplm_model.compile(loss=imperfect_loss, optimizer='adam')
     
     losses = []
     
@@ -324,137 +366,61 @@ def main(args, device, data):
         toy_clip_times = []
 
     if args.debug:
-        toy_training_start = time()
+        toy_training_start = time.time()
     
-    toy_training_start = time()
+    toy_training_start = time.time()
 
-    # Loop over the epochs
-    for epoch in range(1, N_EPOCHS + 1):
-        
-        if args.debug:
-            toy_epoch_start = time()
-        
-        if args.debug:
-            toy_zero_grad_start = time()
-            
-        # Zero the gradients
-        optimizer.zero_grad() 
-        
-        if args.debug:
-            toy_zero_grad_end = time()
-            toy_zero_grad_time = toy_zero_grad_end - toy_zero_grad_start
-            if epoch % PATIENCE == 0:
-                print(f"Zero grad time: {toy_zero_grad_time:.5f} s")
-            
-        if args.debug:
-            toy_forward_start = time()
-        
-        # Forward pass: compute predicted outputs by passing inputs to the model
-        pred = nplm_model(feature)
-        
-        if args.debug: 
-            toy_forward_end = time()
-            toy_forward_time = toy_forward_end - toy_forward_start
-            if epoch % PATIENCE == 0:
-                print(f"Forward pass time: {toy_forward_time:.5f} s")
-        
-        if args.debug:
-            toy_loss_start = time()
-            
-        # Calculate the loss
-        loss = loss_function(target, pred)
-        
-        if args.debug:
-            toy_loss_end = time()
-            toy_loss_time = toy_loss_end - toy_loss_start
-            if epoch % PATIENCE == 0:
-                print(f"Loss time: {toy_loss_time:.5f} s")
-            
-        losses += [loss.item()]
-        
-        if args.debug:
-            toy_backward_start = time()
-        
-        # Backward pass: compute gradient of the loss with respect to model parameters
-        loss.backward()
-        
-        if args.debug:
-            toy_backward_end = time()
-            toy_backward_time = toy_backward_end - toy_backward_start
-            if epoch % PATIENCE == 0:
-                print(f"Backward pass time: {toy_backward_time:.5f} s")
-        
-        if args.debug:
-            toy_step_start = time()
-        
-        # Perform a single optimization step (parameter update)
-        optimizer.step()
-        
-        if args.debug:
-            toy_step_end = time()
-            toy_step_time = toy_step_end - toy_step_start
-            if epoch % PATIENCE == 0:
-                print(f"Step time: {toy_step_time:.5f} s")
-            
-        if args.debug:
-            toy_clip_start = time()
-        
-        # Clip the weights
-        nplm_model.clip_weights()
-        
-        if args.debug:
-            toy_clip_end = time()
-            toy_clip_time = toy_clip_end - toy_clip_start
-            if epoch % PATIENCE == 0:
-                print(f"Clip time: {toy_clip_time:.5f} s")
-        
-        if args.debug:
-            toy_epoch_end = time()
-            toy_epoch_time = toy_epoch_end - toy_epoch_start
-            if epoch % PATIENCE == 0:
-                print(f"Epoch time: {toy_epoch_time:.5f} s")
-        
-        
-        # Callback every PATIENCE epochs
-        if epoch % PATIENCE == 0:
-            print(f"Epoch {epoch}/{N_EPOCHS} - Loss: {loss:.6f} - t: {-2*loss:.6f}")
-            
-        # save per-epoch timing in lists
-        if args.debug:
-            toy_epoch_times     += [toy_epoch_time]
-            toy_zero_grad_times += [toy_zero_grad_time]
-            toy_forward_times   += [toy_forward_time]
-            toy_loss_times      += [toy_loss_time]
-            toy_backward_times  += [toy_backward_time]
-            toy_step_times      += [toy_step_time]
-            toy_clip_times      += [toy_clip_time]
-            
-        
-    ##############
-    log_results(nplm_model.state_dict(), OUTPUT_PATH, str(args.index)+"_nplm_weights")
-    log_results(losses, OUTPUT_PATH, str(args.index)+"_losses")
-    print(f"data are saved in {OUTPUT_PATH}\n")
+    hist_model = nplm_model.fit(feature, target, batch_size=feature.shape[0], epochs=N_EPOCHS, verbose=False)
+
+    # metrics                      
+    loss_tau  = np.array(hist_model.history['loss'])
+
+    # test statistic                                         
+    final_loss = loss_tau[-1]
+    tau_OBS    = -2*final_loss
+
+    # save t                                                                                                               
+    log_t = OUTPUT_PATH+str(args.index)+'_ttest.txt'
+    out   = open(log_t,'w')
+    out.write("%f\n" %(tau_OBS))
+    out.close()
     
+    # # save the training history                                       
+    # log_history = OUTPUT_PATH+OUTPUT_FILE_ID+'_TAU_history.h5'
+    # f           = h5py.File(log_history,"w")
+    # epoch       = np.array(range(total_epochs_tau))
+    # keepEpoch   = epoch % patience_tau == 0
+    # f.create_dataset('epoch', data=epoch[keepEpoch], compression='gzip')
+    # for key in list(hist_tau.history.keys()):
+    #     monitored = np.array(hist_tau.history[key])
+    #     print('%s: %f'%(key, monitored[-1]))
+    #     f.create_dataset(key, data=monitored[keepEpoch],   compression='gzip')
+    # f.close()
+    
+    # save the model    
+    log_weights = OUTPUT_PATH+str(args.index)+'_TAU_weights.h5'
+    nplm_model.save_weights(log_weights)
+
     if args.debug:
-        toy_training_end = time()
+        toy_training_end = time.time()
         toy_training_time = toy_training_end - toy_training_start
         print(f"Training time: {toy_training_time:.5f} s")
 
-    toy_training_end = time()
-    toy_end = time()
+    toy_training_end = time.time()
+    toy_end = time.time()
         
         
     if args.debug:
-        toy_end = time()
+        toy_end = time.time()
         toy_time = toy_end - toy_start
         print(f"Total toy time: {toy_time:.5f} s")
         
     toy_time = toy_end - toy_start
-    toy_training_time = toy_training_end - toy_training_start
-    print(f"Total toy time: {toy_time:.5f} s")
-    print(f"Total toy training time: {toy_training_time:.5f} s")
+    # toy_training_time = toy_training_end - toy_training_start
+    # print(f"Total toy time: {toy_time:.5f} s")
+    # print(f"Total toy training time: {toy_training_time:.5f} s")
     f = open("/home/ubuntu/NPLM.torch/notebooks/tensor/timing.txt", "a")
-    f.write(f'{toy_time}\t {toy_training_time} \n')
+    f.write(f'{toy_time}')
     f.close()
         
     # save the final timing
@@ -515,10 +481,9 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # print(f'\nThe device used is: {device}\n')
+    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # force cpu
-    # device = torch.device("cpu")
+    device = torch.device("cpu")
     print(f'\nThe device used is: {device}\n')
     
     main(args, device)
